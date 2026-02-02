@@ -1,0 +1,31 @@
+# Django and DRF
+Django==5.0.1
+djangorestframework==3.14.0
+django-cors-headers==4.3.1
+django-filter==23.5
+
+# PDF Processing
+pdfplumber==0.10.3
+PyPDF2==3.0.1
+pytesseract==0.3.10
+# Pillow==10.1.0
+
+# Word Document Generation
+python-docx==1.1.0
+
+# Celery for async tasks
+celery==5.3.4
+redis==5.0.1
+
+# Database
+# psycopg2-binary==2.9.9
+
+# Authentication
+djangorestframework-simplejwt==5.3.1
+
+# Utilities
+python-dotenv==1.0.0
+python-magic==0.4.27
+
+# Development
+ipython==8.20.0
