@@ -4,31 +4,31 @@ djangorestframework==3.14.0
 django-cors-headers==4.3.1
 django-filter==23.5
 
-# PDF Processing
+# PDF Processing (Pure Python - no system dependencies)
 pdfplumber==0.10.3
 PyPDF2==3.0.1
-pytesseract==0.3.10
-# Pillow==10.1.0
 
-# PPTX Processing
+# PPTX Processing (Pure Python - no system dependencies)
 python-pptx==0.6.23
 
-# Word Document Generation
+# Word Document Generation (Pure Python - no system dependencies)
 python-docx==1.1.0
 
 # Celery for async tasks
+# Note: With CELERY_TASK_ALWAYS_EAGER=True in settings, tasks run synchronously
+# and Redis is NOT required. Only install redis if you want background processing.
 celery==5.3.4
-redis==5.0.1
+# redis==5.0.1  # Uncomment only if using Redis for background task processing
 
 # Database
-# psycopg2-binary==2.9.9
+# psycopg2-binary==2.9.9  # Uncomment for PostgreSQL
 
 # Authentication
 djangorestframework-simplejwt==5.3.1
 
 # Utilities
 python-dotenv==1.0.0
-python-magic==0.4.27
 
-# Development
-ipython==8.20.0
+# Dependencies that will be auto-installed:
+# - Pillow (by pdfplumber/python-pptx) - Pure Python with optional C extensions
+# - lxml (by python-docx/python-pptx) - Has pre-built wheels for Linux
