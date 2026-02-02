@@ -1,26 +1,37 @@
 """
-PDF KPI Extraction Service
-Extracts surveillance data from monitoring platform PDFs
+PPTX KPI Extraction Service
+Extracts surveillance data from monitoring platform PPTX files
 """
 import re
-import pdfplumber
+from pptx import Presentation
+from pptx.util import Inches
 from datetime import datetime
 from typing import Dict, List, Any
 
 
-class PDFKPIExtractor:
-    """Extract KPIs from surveillance monitoring PDFs"""
+class PPTXKPIExtractor:
+    """Extract KPIs from surveillance monitoring PPTX files"""
 
-    def __init__(self, pdf_path: str):
-        self.pdf_path = pdf_path
+    def __init__(self, pptx_path: str):
+        self.pptx_path = pptx_path
         self.extracted_data = {}
 
     def extract_all_kpis(self) -> Dict[str, Any]:
-        """Main method to extract all KPIs from PDF"""
-        with pdfplumber.open(self.pdf_path) as pdf:
-            full_text = ""
-            for page in pdf.pages:
-                full_text += page.extract_text() + "\n"
+        """Main method to extract all KPIs from PPTX"""
+        prs = Presentation(self.pptx_path)
+
+        # Extract all text from slides
+        full_text = ""
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    full_text += shape.text + "\n"
+                # Handle tables
+                if shape.has_table:
+                    for row in shape.table.rows:
+                        for cell in row.cells:
+                            full_text += cell.text + "\t"
+                        full_text += "\n"
 
         self.extracted_data = {
             'title': self._extract_title(full_text),
@@ -50,7 +61,8 @@ class PDFKPIExtractor:
         return "Surveillance Report"
 
     def _extract_period(self, text: str) -> Dict[str, str]:
-        """Extract date period (e.g., 11/05/2025 to 12/04/2025)"""
+        """Extract date period"""
+        # Pattern: DD/MM/YYYY to DD/MM/YYYY or various formats
         patterns = [
             r'(\d{2}/\d{2}/\d{4})\s+(?:to|au|à|-)\s+(\d{2}/\d{2}/\d{4})',
             r'(\d{2}\s+\w+\s+\d{4})\s+(?:to|au|à|-)\s+(\d{2}\s+\w+\s+\d{4})',
@@ -112,7 +124,7 @@ class PDFKPIExtractor:
         views_evo_pattern = r'[Vv]ues?.*?([+-]?\d+\.?\d*)%|[Ii]mpressions?.*?([+-]?\d+\.?\d*)%'
         match = re.search(views_evo_pattern, text)
         if match:
-            data['views_evolution'] = float(match.group(1) or match.group(2) or 0)
+            data['views_evolution'] = float(match.group(1) or match.group(2))
 
         # Extract potential reach
         reach_patterns = [
@@ -179,11 +191,11 @@ class PDFKPIExtractor:
         return data
 
     def _extract_volume_data(self, text: str) -> Dict[str, Any]:
-        """Extract mentions volume and change percentage"""
+        """Extract mentions volume and change percentage (legacy)"""
         data = {'mentions': 0, 'change_percent': 0.0}
 
         # Extract mentions count
-        mentions_pattern = r'Mentions\s+(\d+)'
+        mentions_pattern = r'[Mm]entions?\s*[:\s]*(\d+)'
         mentions_match = re.search(mentions_pattern, text)
         if mentions_match:
             data['mentions'] = int(mentions_match.group(1))
@@ -197,18 +209,17 @@ class PDFKPIExtractor:
         return data
 
     def _extract_reach_data(self, text: str) -> Dict[str, Any]:
-        """Extract reach metrics"""
+        """Extract reach metrics (legacy)"""
         data = {'reach': 0, 'change_percent': 0.0}
 
-        # Extract reach count (handles formats like 10,008,370)
-        reach_pattern = r'Reach\s+([\d,]+)'
+        # Extract reach count
+        reach_pattern = r'[Rr]each\s*[:\s]*([\d,.\s]+)'
         reach_match = re.search(reach_pattern, text)
         if reach_match:
-            reach_str = reach_match.group(1).replace(',', '')
-            data['reach'] = int(reach_str)
+            data['reach'] = self._parse_number(reach_match.group(1))
 
         # Extract reach percentage change
-        reach_percent_pattern = r'Reach\s+[\d,]+\s+(-?\d+\.?\d*)%'
+        reach_percent_pattern = r'[Rr]each.*?(-?\d+\.?\d*)%'
         reach_percent_match = re.search(reach_percent_pattern, text)
         if reach_percent_match:
             data['change_percent'] = float(reach_percent_match.group(1))
@@ -219,9 +230,23 @@ class PDFKPIExtractor:
         """Extract sentiment distribution"""
         sentiment_data = {}
 
-        # Pattern: Positive 147 (57.2%)
-        sentiment_pattern = r'(Positive|Negative|Neutral|Positif|Négatif|Neutre)\s+(\d+)\s+\([\d.]+%\)'
-        matches = re.findall(sentiment_pattern, text, re.IGNORECASE)
+        # Pattern variations for sentiment
+        patterns = [
+            r'[Pp]ositi[fv]e?\s*[:\s]*(\d+)',
+            r'[Nn][eé]gati[fv]e?\s*[:\s]*(\d+)',
+            r'[Nn]eutr[ea]l?\s*[:\s]*(\d+)',
+        ]
+
+        sentiment_names = ['positive', 'negative', 'neutral']
+
+        for pattern, name in zip(patterns, sentiment_names):
+            match = re.search(pattern, text)
+            if match:
+                sentiment_data[name] = int(match.group(1))
+
+        # Alternative pattern: Sentiment (count) percentage
+        alt_pattern = r'(Positive|Negative|Neutral|Positif|Négatif|Neutre)\s+(\d+)\s+\([\d.]+%\)'
+        matches = re.findall(alt_pattern, text, re.IGNORECASE)
 
         for sentiment, count in matches:
             key = sentiment.lower()
@@ -239,14 +264,23 @@ class PDFKPIExtractor:
         """Extract emotion distribution"""
         emotion_data = {}
 
-        # Pattern: Joy 85 (33.07%)
-        emotions = ['Joy', 'Neutral', 'Anger', 'Sadness', 'Surprise', 'Fear', 'Disgust']
+        emotions = {
+            'joy': ['Joy', 'Joie'],
+            'neutral': ['Neutral', 'Neutre'],
+            'anger': ['Anger', 'Colère'],
+            'sadness': ['Sadness', 'Tristesse'],
+            'surprise': ['Surprise'],
+            'fear': ['Fear', 'Peur'],
+            'disgust': ['Disgust', 'Dégoût']
+        }
 
-        for emotion in emotions:
-            pattern = rf'{emotion}\s+(\d+)\s+\([\d.]+%\)'
-            match = re.search(pattern, text)
-            if match:
-                emotion_data[emotion.lower()] = int(match.group(1))
+        for emotion_key, emotion_names in emotions.items():
+            for name in emotion_names:
+                pattern = rf'{name}\s+(\d+)\s*(?:\([\d.]+%\))?'
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    emotion_data[emotion_key] = int(match.group(1))
+                    break
 
         return emotion_data
 
@@ -254,15 +288,16 @@ class PDFKPIExtractor:
         """Extract sources distribution"""
         sources_data = {}
 
-        # Pattern: Facebook 252 (98.05%)
-        platforms = ['Facebook', 'Instagram', 'X \(Twitter\)', 'Videos', 'TikTok', 'YouTube']
+        platforms = [
+            'Facebook', 'Instagram', 'Twitter', 'X', 'TikTok',
+            'YouTube', 'LinkedIn', 'WhatsApp', 'Telegram'
+        ]
 
         for platform in platforms:
-            pattern = rf'{platform}\s+(\d+)\s+\([\d.]+%\)'
-            match = re.search(pattern, text)
+            pattern = rf'{platform}\s+(\d+)\s*(?:\([\d.]+%\))?'
+            match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                platform_key = platform.replace(' \\', '').replace('\\', '').strip()
-                sources_data[platform_key] = int(match.group(1))
+                sources_data[platform] = int(match.group(1))
 
         return sources_data
 
@@ -270,22 +305,26 @@ class PDFKPIExtractor:
         """Extract languages distribution"""
         languages_data = {}
 
-        # Pattern: French 187 (72.76%)
-        language_pattern = r'(French|English|Arabic|Spanish|Français|Anglais|Arabe|Espagnol)\s+(\d+)\s+\([\d.]+%\)'
-        matches = re.findall(language_pattern, text, re.IGNORECASE)
+        languages = [
+            'French', 'Français', 'English', 'Anglais',
+            'Arabic', 'Arabe', 'Spanish', 'Espagnol'
+        ]
 
-        for language, count in matches:
-            # Normalize language name
-            normalized = language
-            if language.lower() in ['français']:
-                normalized = 'French'
-            elif language.lower() in ['anglais']:
-                normalized = 'English'
-            elif language.lower() in ['arabe']:
-                normalized = 'Arabic'
-            elif language.lower() in ['espagnol']:
-                normalized = 'Spanish'
-            languages_data[normalized] = int(count)
+        for language in languages:
+            pattern = rf'{language}\s+(\d+)\s*(?:\([\d.]+%\))?'
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                # Normalize language name
+                normalized = language
+                if language in ['Français']:
+                    normalized = 'French'
+                elif language in ['Anglais']:
+                    normalized = 'English'
+                elif language in ['Arabe']:
+                    normalized = 'Arabic'
+                elif language in ['Espagnol']:
+                    normalized = 'Spanish'
+                languages_data[normalized] = int(match.group(1))
 
         return languages_data
 
@@ -294,13 +333,12 @@ class PDFKPIExtractor:
         topics = []
 
         # Look for topics section
-        topics_section = re.search(r'Topics.*?(?=Hashtags|Reach|$)', text, re.DOTALL)
+        topics_section = re.search(r'[Tt]opics?.*?(?=[Hh]ashtags?|[Rr]each|$)', text, re.DOTALL)
         if topics_section:
-            # Pattern: rdpc 65
             topic_pattern = r'(\w[\w\s-]+?)\s+(\d+)(?=\s|$)'
             matches = re.findall(topic_pattern, topics_section.group())
 
-            for topic, count in matches[:20]:  # Limit to top 20
+            for topic, count in matches[:20]:
                 topics.append({
                     'name': topic.strip(),
                     'count': int(count)
@@ -312,7 +350,6 @@ class PDFKPIExtractor:
         """Extract hashtags with counts"""
         hashtags = []
 
-        # Pattern: #paulbiya 29
         hashtag_pattern = r'(#\w+)\s+(\d+)'
         matches = re.findall(hashtag_pattern, text)
 
@@ -328,8 +365,8 @@ class PDFKPIExtractor:
         """Extract top influencers"""
         influencers = []
 
-        # Look for influencer section with scores like "47/100"
-        influencer_pattern = r'([\w\s]+?)\s+https://[^\s]+\s+(\d+)/100'
+        # Look for influencer section with scores
+        influencer_pattern = r'([\w\s]+?)\s+(?:https?://[^\s]+\s+)?(\d+)/100'
         matches = re.findall(influencer_pattern, text)
 
         for name, score in matches:
@@ -350,7 +387,7 @@ class PDFKPIExtractor:
             return 0
 
 
-def extract_kpis_from_pdf(pdf_path: str) -> Dict[str, Any]:
-    """Convenience function to extract KPIs from PDF"""
-    extractor = PDFKPIExtractor(pdf_path)
+def extract_kpis_from_pptx(pptx_path: str) -> Dict[str, Any]:
+    """Convenience function to extract KPIs from PPTX"""
+    extractor = PPTXKPIExtractor(pptx_path)
     return extractor.extract_all_kpis()
