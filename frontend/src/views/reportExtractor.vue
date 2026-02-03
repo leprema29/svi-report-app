@@ -155,37 +155,60 @@
             </div>
           </template>
 
+          <!-- Created At Column -->
+          <template v-slot:item.created_at="{ item }">
+            <div class="text-caption">
+              <v-icon size="x-small" class="mr-1">mdi-calendar</v-icon>
+              {{ formatDateTime(item.created_at) }}
+            </div>
+          </template>
+
           <!-- Actions Column -->
           <template v-slot:item.actions="{ item }">
-            <v-btn
-              icon
-              small
-              @click="viewDetails(item)"
-              title="Voir Détails"
-            >
-              <v-icon small>mdi-eye</v-icon>
-            </v-btn>
+            <div class="d-flex align-center ga-1">
+              <v-tooltip location="top">
+                <template v-slot:activator="{ props }">
+                  <v-btn
+                    v-bind="props"
+                    icon="mdi-eye-outline"
+                    size="small"
+                    variant="tonal"
+                    color="info"
+                    @click="viewDetails(item)"
+                  ></v-btn>
+                </template>
+                <span>Voir Détails</span>
+              </v-tooltip>
 
-            <v-btn
-              icon
-              small
-              @click="downloadDocx(item)"
-              :disabled="item.status !== 'completed'"
-              color="success"
-              title="Télécharger Word"
-            >
-              <v-icon small>mdi-file-word</v-icon>
-            </v-btn>
+              <v-tooltip location="top">
+                <template v-slot:activator="{ props }">
+                  <v-btn
+                    v-bind="props"
+                    icon="mdi-microsoft-word"
+                    size="small"
+                    variant="tonal"
+                    color="primary"
+                    :disabled="item.status !== 'completed'"
+                    @click="downloadDocx(item)"
+                  ></v-btn>
+                </template>
+                <span>Télécharger Word</span>
+              </v-tooltip>
 
-            <v-btn
-              icon
-              small
-              @click="deleteReport(item)"
-              color="error"
-              title="Supprimer"
-            >
-              <v-icon small>mdi-delete</v-icon>
-            </v-btn>
+              <v-tooltip location="top">
+                <template v-slot:activator="{ props }">
+                  <v-btn
+                    v-bind="props"
+                    icon="mdi-trash-can-outline"
+                    size="small"
+                    variant="tonal"
+                    color="error"
+                    @click="deleteReport(item)"
+                  ></v-btn>
+                </template>
+                <span>Supprimer</span>
+              </v-tooltip>
+            </div>
           </template>
         </v-data-table>
       </v-card-text>
@@ -730,6 +753,18 @@ export default {
       return date.toLocaleDateString('fr-FR')
     },
 
+    formatDateTime(dateString) {
+      if (!dateString) return 'N/A'
+      const date = new Date(dateString)
+      return date.toLocaleDateString('fr-FR', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    },
+
     formatNumber(num) {
       if (!num) return '0'
       return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
@@ -751,5 +786,35 @@ export default {
 
 .v-simple-table th {
   font-weight: bold !important;
+}
+
+/* Action buttons styling */
+.d-flex.ga-1 {
+  gap: 8px;
+}
+
+/* Make action buttons more rounded and modern */
+:deep(.v-btn--icon) {
+  border-radius: 8px;
+}
+
+/* Hover effects for action buttons */
+:deep(.v-btn--variant-tonal:hover) {
+  transform: scale(1.1);
+  transition: transform 0.2s ease;
+}
+
+/* Data table improvements */
+:deep(.v-data-table) {
+  border-radius: 8px;
+}
+
+:deep(.v-data-table thead th) {
+  font-weight: 600 !important;
+  background-color: #f5f5f5;
+}
+
+:deep(.v-data-table tbody tr:hover) {
+  background-color: #f8f9fa !important;
 }
 </style>
