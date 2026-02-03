@@ -255,7 +255,7 @@ class PDFKPIExtractor:
         sources_data = {}
 
         # Pattern: Facebook 252 (98.05%)
-        platforms = ['Facebook', 'Instagram', 'X \(Twitter\)', 'Videos', 'TikTok', 'YouTube']
+        platforms = ['Facebook', 'Instagram', r'X \(Twitter\)', 'Videos', 'TikTok', 'YouTube']
 
         for platform in platforms:
             pattern = rf'{platform}\s+(\d+)\s+\([\d.]+%\)'
