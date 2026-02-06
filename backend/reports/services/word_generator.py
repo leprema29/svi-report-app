@@ -17,9 +17,13 @@ import os
 class WordReportGenerator:
     """Generate Word report from extracted KPI data"""
 
+    # Path to logo image (relative to backend directory)
+    LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'antic_logo.png')
+
     def __init__(self):
         self.doc = Document()
         self._setup_styles()
+        self._add_page_numbers()
 
     def _setup_styles(self):
         """Configure document styles"""
@@ -29,8 +33,56 @@ class WordReportGenerator:
         font.name = 'Times New Roman'
         font.size = Pt(12)
 
+    def _add_page_numbers(self):
+        """Add page numbers to footer"""
+        section = self.doc.sections[0]
+        footer = section.footer
+        footer.is_linked_to_previous = False
+
+        # Add page number paragraph
+        paragraph = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Add "Page X of Y" format
+        run = paragraph.add_run("Page ")
+        run.font.size = Pt(10)
+
+        # Add PAGE field
+        fldChar1 = OxmlElement('w:fldChar')
+        fldChar1.set(qn('w:fldCharType'), 'begin')
+
+        instrText = OxmlElement('w:instrText')
+        instrText.text = "PAGE"
+
+        fldChar2 = OxmlElement('w:fldChar')
+        fldChar2.set(qn('w:fldCharType'), 'end')
+
+        run._r.append(fldChar1)
+        run._r.append(instrText)
+        run._r.append(fldChar2)
+
+        run2 = paragraph.add_run(" sur ")
+        run2.font.size = Pt(10)
+
+        # Add NUMPAGES field
+        fldChar3 = OxmlElement('w:fldChar')
+        fldChar3.set(qn('w:fldCharType'), 'begin')
+
+        instrText2 = OxmlElement('w:instrText')
+        instrText2.text = "NUMPAGES"
+
+        fldChar4 = OxmlElement('w:fldChar')
+        fldChar4.set(qn('w:fldCharType'), 'end')
+
+        run2._r.append(fldChar3)
+        run2._r.append(instrText2)
+        run2._r.append(fldChar4)
+
     def generate_report(self, data: Dict[str, Any], output_path: str):
         """Generate complete Word report"""
+        # Store generation time
+        self.generation_time = datetime.now()
+
         # Add cover page first
         self._add_cover_page(data)
 
@@ -44,6 +96,9 @@ class WordReportGenerator:
         period = data.get('period', {})
         if period.get('start') and period.get('end'):
             self._add_subtitle(f"Période: {period['start']} - {period['end']}")
+
+        # Add generation timestamp
+        self._add_generation_info()
 
         self.doc.add_paragraph()  # Spacing
 
@@ -71,26 +126,27 @@ class WordReportGenerator:
         self._add_languages_table(data.get('languages', {}))
 
         # Add topics
-        topics = data.get('topics', [])
-        if topics:
-            self._add_section_heading("4. SUJETS PRINCIPAUX")
-            self._add_topics_table(topics)
+        self._add_section_heading("4. SUJETS PRINCIPAUX")
+        self._add_topics_table(data.get('topics', []))
 
         # Add hashtags
-        hashtags = data.get('hashtags', [])
-        if hashtags:
-            self._add_section_heading("5. HASHTAGS POPULAIRES")
-            self._add_hashtags_table(hashtags)
+        self._add_section_heading("5. HASHTAGS POPULAIRES")
+        self._add_hashtags_table(data.get('hashtags', []))
 
-        # Add influencers
-        influencers = data.get('influencers', [])
-        if influencers:
-            self._add_section_heading("6. INFLUENCEURS PRINCIPAUX")
-            self._add_influencers_table(influencers)
+        # Section 6 (Influencers) removed as per request
 
         # Save document
         self.doc.save(output_path)
         return output_path
+
+    def _add_generation_info(self):
+        """Add report generation timestamp"""
+        para = self.doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = para.add_run(f"Rapport généré le {self.generation_time.strftime('%d/%m/%Y à %H:%M')}")
+        run.font.size = Pt(10)
+        run.font.italic = True
+        run.font.color.rgb = RGBColor(128, 128, 128)
 
     def _add_cover_page(self, data: Dict[str, Any]):
         """Add ANTIC branded cover page"""
@@ -98,7 +154,15 @@ class WordReportGenerator:
         header_table = self.doc.add_table(rows=2, cols=3)
         header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
-        # First row - Country names
+        # Set column widths
+        for cell in header_table.columns[0].cells:
+            cell.width = Inches(2.5)
+        for cell in header_table.columns[1].cells:
+            cell.width = Inches(1.5)
+        for cell in header_table.columns[2].cells:
+            cell.width = Inches(2.5)
+
+        # First row - Country names and logo
         cells_row1 = header_table.rows[0].cells
 
         # Left - French
@@ -108,9 +172,10 @@ class WordReportGenerator:
         run_left.bold = True
         run_left.font.size = Pt(11)
 
-        # Center - Logo placeholder (ANTIC text)
+        # Center - Logo
         p_center = cells_row1[1].paragraphs[0]
         p_center.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        self._add_logo(p_center)
 
         # Right - English
         p_right = cells_row1[2].paragraphs[0]
@@ -129,13 +194,8 @@ class WordReportGenerator:
         run_left2.italic = True
         run_left2.font.size = Pt(10)
 
-        # Center - ANTIC Logo text
-        p_center2 = cells_row2[1].paragraphs[0]
-        p_center2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run_antic = p_center2.add_run("ANTIC")
-        run_antic.bold = True
-        run_antic.font.size = Pt(24)
-        run_antic.font.color.rgb = RGBColor(0, 128, 0)  # Green color
+        # Center cell (below logo) - empty or can add text
+        cells_row2[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         # Right - English motto
         p_right2 = cells_row2[2].paragraphs[0]
@@ -167,7 +227,7 @@ class WordReportGenerator:
         run_agency_en.font.size = Pt(10)
 
         # Add lots of spacing to push title box to lower part of page
-        for _ in range(15):
+        for _ in range(12):
             self.doc.add_paragraph()
 
         # Create bordered title box
@@ -210,6 +270,44 @@ class WordReportGenerator:
         # Set cell width
         title_cell.width = Inches(5.5)
 
+    def _add_logo(self, paragraph):
+        """Add ANTIC logo image or text fallback"""
+        # Try to add logo image
+        if os.path.exists(self.LOGO_PATH):
+            try:
+                run = paragraph.add_run()
+                run.add_picture(self.LOGO_PATH, width=Inches(1.0))
+                return
+            except Exception:
+                pass
+
+        # Fallback: Create styled text logo
+        # Line 1: "ANTIC" in green with special styling
+        run_a = paragraph.add_run("A")
+        run_a.bold = True
+        run_a.font.size = Pt(20)
+        run_a.font.color.rgb = RGBColor(0, 128, 0)  # Green
+
+        run_n = paragraph.add_run("N")
+        run_n.bold = True
+        run_n.font.size = Pt(20)
+        run_n.font.color.rgb = RGBColor(255, 204, 0)  # Yellow
+
+        run_t = paragraph.add_run("T")
+        run_t.bold = True
+        run_t.font.size = Pt(20)
+        run_t.font.color.rgb = RGBColor(0, 128, 0)  # Green
+
+        run_i = paragraph.add_run("I")
+        run_i.bold = True
+        run_i.font.size = Pt(20)
+        run_i.font.color.rgb = RGBColor(255, 0, 0)  # Red
+
+        run_c = paragraph.add_run("C")
+        run_c.bold = True
+        run_c.font.size = Pt(20)
+        run_c.font.color.rgb = RGBColor(0, 128, 0)  # Green
+
     def _set_cell_border(self, cell, border_size=12):
         """Set cell border"""
         tc = cell._tc
@@ -251,9 +349,32 @@ class WordReportGenerator:
             run.font.color.rgb = RGBColor(31, 78, 120)
             run.font.size = Pt(12)
 
+    def _add_no_data_message(self, message: str = "Information non disponible pour le moment."):
+        """Add a message when no data is available"""
+        para = self.doc.add_paragraph()
+        run = para.add_run(message)
+        run.font.italic = True
+        run.font.color.rgb = RGBColor(128, 128, 128)
+        run.font.size = Pt(11)
+
+    def _has_data(self, data) -> bool:
+        """Check if data has meaningful content"""
+        if data is None:
+            return False
+        if isinstance(data, dict):
+            return any(v for v in data.values() if v)
+        if isinstance(data, list):
+            return len(data) > 0
+        return bool(data)
+
     def _add_presence_passive_table(self, data: Dict[str, Any]):
         """Add presence passive indicators table"""
         passive = data.get('presence_passive', {})
+
+        # Check if we have any data
+        if not self._has_data(passive):
+            self._add_no_data_message("Les indicateurs de présence passive ne sont pas disponibles pour ce rapport.")
+            return
 
         table = self.doc.add_table(rows=4, cols=3)
         table.style = 'Light Grid Accent 1'
@@ -292,6 +413,11 @@ class WordReportGenerator:
         """Add presence active indicators table"""
         active = data.get('presence_active', {})
 
+        # Check if we have any data
+        if not self._has_data(active):
+            self._add_no_data_message("Les indicateurs de présence active ne sont pas disponibles pour ce rapport.")
+            return
+
         table = self.doc.add_table(rows=4, cols=2)
         table.style = 'Light Grid Accent 1'
 
@@ -309,7 +435,7 @@ class WordReportGenerator:
 
         # Likes row
         cells2 = table.rows[2].cells
-        cells2[0].text = 'Nombre de Likes (J\'aime)'
+        cells2[0].text = "Nombre de Likes (J'aime)"
         cells2[1].text = f"{active.get('likes', 0):,}"
 
         # Shares row
@@ -319,6 +445,11 @@ class WordReportGenerator:
 
     def _add_opinion_trends_table(self, sentiment_data: Dict[str, int]):
         """Add opinion trends table"""
+        # Check if we have any data
+        if not self._has_data(sentiment_data):
+            self._add_no_data_message("Les indicateurs des tendances d'opinions ne sont pas disponibles pour ce rapport.")
+            return
+
         table = self.doc.add_table(rows=4, cols=3)
         table.style = 'Light Grid Accent 1'
 
@@ -356,7 +487,8 @@ class WordReportGenerator:
 
     def _add_sources_table(self, sources_data: Dict[str, int]):
         """Add sources distribution table"""
-        if not sources_data:
+        if not self._has_data(sources_data):
+            self._add_no_data_message("La répartition par source n'est pas disponible pour ce rapport.")
             return
 
         total = sum(sources_data.values())
@@ -386,7 +518,8 @@ class WordReportGenerator:
 
     def _add_languages_table(self, languages_data: Dict[str, int]):
         """Add languages distribution table"""
-        if not languages_data:
+        if not self._has_data(languages_data):
+            self._add_no_data_message("La répartition par langue n'est pas disponible pour ce rapport.")
             return
 
         total = sum(languages_data.values())
@@ -413,7 +546,8 @@ class WordReportGenerator:
 
     def _add_topics_table(self, topics: list):
         """Add top topics table"""
-        if not topics:
+        if not self._has_data(topics):
+            self._add_no_data_message("Les sujets principaux ne sont pas disponibles pour ce rapport.")
             return
 
         # Limit to top 15
@@ -440,7 +574,8 @@ class WordReportGenerator:
 
     def _add_hashtags_table(self, hashtags: list):
         """Add hashtags table"""
-        if not hashtags:
+        if not self._has_data(hashtags):
+            self._add_no_data_message("Les hashtags populaires ne sont pas disponibles pour ce rapport.")
             return
 
         # Limit to top 10
@@ -464,33 +599,6 @@ class WordReportGenerator:
             cells[0].text = str(idx)
             cells[1].text = hashtag.get('hashtag', '')
             cells[2].text = str(hashtag.get('count', 0))
-
-    def _add_influencers_table(self, influencers: list):
-        """Add top influencers table"""
-        if not influencers:
-            return
-
-        # Limit to top 10
-        influencers = influencers[:10]
-
-        table = self.doc.add_table(rows=len(influencers) + 1, cols=3)
-        table.style = 'Light Grid Accent 1'
-
-        # Header
-        header_cells = table.rows[0].cells
-        header_cells[0].text = 'Rang'
-        header_cells[1].text = 'Influenceur'
-        header_cells[2].text = 'Score'
-        self._set_cell_background(header_cells[0], 'D5E8F0')
-        self._set_cell_background(header_cells[1], 'D5E8F0')
-        self._set_cell_background(header_cells[2], 'D5E8F0')
-
-        # Data rows
-        for idx, influencer in enumerate(influencers, 1):
-            cells = table.rows[idx].cells
-            cells[0].text = str(idx)
-            cells[1].text = influencer.get('name', '')
-            cells[2].text = f"{influencer.get('influence_score', 0)}/100"
 
     def _set_cell_background(self, cell, color: str):
         """Set cell background color"""
