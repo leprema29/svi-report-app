@@ -12,12 +12,23 @@ from docx.oxml import OxmlElement
 from typing import Dict, Any
 from datetime import datetime
 import os
+import tempfile
+
+# Try to import PyMuPDF for PDF template support
+try:
+    import fitz  # PyMuPDF
+    HAS_PYMUPDF = True
+except ImportError:
+    HAS_PYMUPDF = False
 
 
 class WordReportGenerator:
     """Generate Word report from extracted KPI data"""
 
-    # Path to logo image (relative to backend directory)
+    # Path to PDF template (relative to backend directory)
+    TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'templates', 'report_template.pdf')
+
+    # Fallback: Path to logo image
     LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'antic_logo.png')
 
     def __init__(self):
@@ -83,7 +94,7 @@ class WordReportGenerator:
         # Store generation time
         self.generation_time = datetime.now()
 
-        # Add cover page first
+        # Add cover page first (from template or fallback)
         self._add_cover_page(data)
 
         # Add page break after cover
@@ -149,7 +160,113 @@ class WordReportGenerator:
         run.font.color.rgb = RGBColor(128, 128, 128)
 
     def _add_cover_page(self, data: Dict[str, Any]):
-        """Add ANTIC branded cover page"""
+        """Add cover page - uses PDF template if available, otherwise fallback"""
+        # Try to use PDF template first
+        if self._add_cover_from_template(data):
+            return
+
+        # Fallback to generated cover page
+        self._add_generated_cover_page(data)
+
+    def _add_cover_from_template(self, data: Dict[str, Any]) -> bool:
+        """
+        Add cover page from PDF template.
+        Returns True if successful, False otherwise.
+        """
+        if not HAS_PYMUPDF:
+            return False
+
+        if not os.path.exists(self.TEMPLATE_PATH):
+            return False
+
+        try:
+            # Open the PDF template
+            pdf_doc = fitz.open(self.TEMPLATE_PATH)
+
+            if len(pdf_doc) == 0:
+                pdf_doc.close()
+                return False
+
+            # Get the first page
+            page = pdf_doc[0]
+
+            # Convert to image with high resolution
+            zoom = 2  # 2x zoom for better quality
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat)
+
+            # Save to temporary file
+            temp_img = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+            pix.save(temp_img.name)
+            temp_img.close()
+
+            pdf_doc.close()
+
+            # Add the image to the document as cover page
+            # Set page margins to minimal for full-page image
+            section = self.doc.sections[0]
+            section.top_margin = Inches(0.5)
+            section.bottom_margin = Inches(0.5)
+            section.left_margin = Inches(0.5)
+            section.right_margin = Inches(0.5)
+
+            # Add the template image
+            para = self.doc.add_paragraph()
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = para.add_run()
+            run.add_picture(temp_img.name, width=Inches(7.0))
+
+            # Add some spacing
+            self.doc.add_paragraph()
+            self.doc.add_paragraph()
+
+            # Add the period text box below the template
+            period = data.get('period', {})
+            start_date = period.get('start', '')
+            end_date = period.get('end', '')
+
+            if start_date and end_date:
+                period_text = f"POUR LA PERIODE DU {start_date} AU {end_date}"
+            else:
+                period_text = f"POUR LA PERIODE DU {datetime.now().strftime('%d/%m/%Y')}"
+
+            # Add period in a bordered box
+            title_table = self.doc.add_table(rows=1, cols=1)
+            title_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            title_cell = title_table.rows[0].cells[0]
+            self._set_cell_border(title_cell)
+
+            p_title = title_cell.paragraphs[0]
+            p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            run_title = p_title.add_run("RAPPORT DE VEILLE INFORMATIONNELLE SUR\n")
+            run_title.bold = True
+            run_title.font.size = Pt(14)
+
+            run_title2 = p_title.add_run("L'INTERNET ET LES RESEAUX SOCIAUX\n")
+            run_title2.bold = True
+            run_title2.font.size = Pt(14)
+
+            run_period = p_title.add_run(period_text)
+            run_period.bold = True
+            run_period.font.size = Pt(14)
+
+            title_cell.width = Inches(5.5)
+
+            # Clean up temp file
+            try:
+                os.unlink(temp_img.name)
+            except:
+                pass
+
+            return True
+
+        except Exception as e:
+            print(f"Error loading PDF template: {e}")
+            return False
+
+    def _add_generated_cover_page(self, data: Dict[str, Any]):
+        """Fallback: Generate cover page programmatically"""
         # Create header table for bilingual header (3 columns)
         header_table = self.doc.add_table(rows=2, cols=3)
         header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -194,7 +311,7 @@ class WordReportGenerator:
         run_left2.italic = True
         run_left2.font.size = Pt(10)
 
-        # Center cell (below logo) - empty or can add text
+        # Center cell (below logo) - empty
         cells_row2[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         # Right - English motto
@@ -226,7 +343,7 @@ class WordReportGenerator:
         run_agency_en.bold = True
         run_agency_en.font.size = Pt(10)
 
-        # Add lots of spacing to push title box to lower part of page
+        # Add spacing to push title box to lower part of page
         for _ in range(12):
             self.doc.add_paragraph()
 
@@ -236,7 +353,6 @@ class WordReportGenerator:
         end_date = period.get('end', '')
 
         # Format dates if available
-        period_text = ""
         if start_date and end_date:
             period_text = f"POUR LA PERIODE DU {start_date} AU {end_date}"
         else:
@@ -282,7 +398,6 @@ class WordReportGenerator:
                 pass
 
         # Fallback: Create styled text logo
-        # Line 1: "ANTIC" in green with special styling
         run_a = paragraph.add_run("A")
         run_a.bold = True
         run_a.font.size = Pt(20)
