@@ -14,25 +14,37 @@ from datetime import datetime
 import os
 import tempfile
 
-# Try to import PyMuPDF for PDF template support
-try:
-    import fitz  # PyMuPDF
-    HAS_PYMUPDF = True
-except ImportError:
-    HAS_PYMUPDF = False
-
 
 class WordReportGenerator:
     """Generate Word report from extracted KPI data"""
 
-    # Path to PDF template (relative to backend directory)
-    TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'templates', 'report_template.pdf')
+    # Path to Word template (relative to backend directory)
+    TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'templates', 'report_template.docx')
 
     # Fallback: Path to logo image
     LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'antic_logo.png')
 
     def __init__(self):
-        self.doc = Document()
+        self.doc = None
+        self.using_template = False
+        self._init_document()
+
+    def _init_document(self):
+        """Initialize document - use template if available, otherwise create new"""
+        if os.path.exists(self.TEMPLATE_PATH):
+            try:
+                self.doc = Document(self.TEMPLATE_PATH)
+                self.using_template = True
+                print(f"Using Word template: {self.TEMPLATE_PATH}")
+            except Exception as e:
+                print(f"Error loading template: {e}, creating new document")
+                self.doc = Document()
+                self.using_template = False
+        else:
+            print(f"Template not found at {self.TEMPLATE_PATH}, creating new document")
+            self.doc = Document()
+            self.using_template = False
+
         self._setup_styles()
         self._add_page_numbers()
 
@@ -160,110 +172,53 @@ class WordReportGenerator:
         run.font.color.rgb = RGBColor(128, 128, 128)
 
     def _add_cover_page(self, data: Dict[str, Any]):
-        """Add cover page - uses PDF template if available, otherwise fallback"""
-        # Try to use PDF template first
-        if self._add_cover_from_template(data):
+        """Add cover page - skips if using Word template (template already has cover)"""
+        # If using a Word template, the cover page is already there
+        # Just add the period information
+        if self.using_template:
+            self._add_period_info_to_template(data)
             return
 
         # Fallback to generated cover page
         self._add_generated_cover_page(data)
 
-    def _add_cover_from_template(self, data: Dict[str, Any]) -> bool:
-        """
-        Add cover page from PDF template.
-        Returns True if successful, False otherwise.
-        """
-        if not HAS_PYMUPDF:
-            return False
+    def _add_period_info_to_template(self, data: Dict[str, Any]):
+        """Add period information when using Word template"""
+        period = data.get('period', {})
+        start_date = period.get('start', '')
+        end_date = period.get('end', '')
 
-        if not os.path.exists(self.TEMPLATE_PATH):
-            return False
+        if start_date and end_date:
+            period_text = f"POUR LA PERIODE DU {start_date} AU {end_date}"
+        else:
+            period_text = f"POUR LA PERIODE DU {datetime.now().strftime('%d/%m/%Y')}"
 
-        try:
-            # Open the PDF template
-            pdf_doc = fitz.open(self.TEMPLATE_PATH)
+        # Add some spacing after template content
+        self.doc.add_paragraph()
+        self.doc.add_paragraph()
 
-            if len(pdf_doc) == 0:
-                pdf_doc.close()
-                return False
+        # Add period in a bordered box
+        title_table = self.doc.add_table(rows=1, cols=1)
+        title_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        title_cell = title_table.rows[0].cells[0]
+        self._set_cell_border(title_cell)
 
-            # Get the first page
-            page = pdf_doc[0]
+        p_title = title_cell.paragraphs[0]
+        p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-            # Convert to image with high resolution
-            zoom = 2  # 2x zoom for better quality
-            mat = fitz.Matrix(zoom, zoom)
-            pix = page.get_pixmap(matrix=mat)
+        run_title = p_title.add_run("RAPPORT DE VEILLE INFORMATIONNELLE SUR\n")
+        run_title.bold = True
+        run_title.font.size = Pt(14)
 
-            # Save to temporary file
-            temp_img = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-            pix.save(temp_img.name)
-            temp_img.close()
+        run_title2 = p_title.add_run("L'INTERNET ET LES RESEAUX SOCIAUX\n")
+        run_title2.bold = True
+        run_title2.font.size = Pt(14)
 
-            pdf_doc.close()
+        run_period = p_title.add_run(period_text)
+        run_period.bold = True
+        run_period.font.size = Pt(14)
 
-            # Add the image to the document as cover page
-            # Set page margins to minimal for full-page image
-            section = self.doc.sections[0]
-            section.top_margin = Inches(0.5)
-            section.bottom_margin = Inches(0.5)
-            section.left_margin = Inches(0.5)
-            section.right_margin = Inches(0.5)
-
-            # Add the template image
-            para = self.doc.add_paragraph()
-            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            run = para.add_run()
-            run.add_picture(temp_img.name, width=Inches(7.0))
-
-            # Add some spacing
-            self.doc.add_paragraph()
-            self.doc.add_paragraph()
-
-            # Add the period text box below the template
-            period = data.get('period', {})
-            start_date = period.get('start', '')
-            end_date = period.get('end', '')
-
-            if start_date and end_date:
-                period_text = f"POUR LA PERIODE DU {start_date} AU {end_date}"
-            else:
-                period_text = f"POUR LA PERIODE DU {datetime.now().strftime('%d/%m/%Y')}"
-
-            # Add period in a bordered box
-            title_table = self.doc.add_table(rows=1, cols=1)
-            title_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-            title_cell = title_table.rows[0].cells[0]
-            self._set_cell_border(title_cell)
-
-            p_title = title_cell.paragraphs[0]
-            p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-            run_title = p_title.add_run("RAPPORT DE VEILLE INFORMATIONNELLE SUR\n")
-            run_title.bold = True
-            run_title.font.size = Pt(14)
-
-            run_title2 = p_title.add_run("L'INTERNET ET LES RESEAUX SOCIAUX\n")
-            run_title2.bold = True
-            run_title2.font.size = Pt(14)
-
-            run_period = p_title.add_run(period_text)
-            run_period.bold = True
-            run_period.font.size = Pt(14)
-
-            title_cell.width = Inches(5.5)
-
-            # Clean up temp file
-            try:
-                os.unlink(temp_img.name)
-            except:
-                pass
-
-            return True
-
-        except Exception as e:
-            print(f"Error loading PDF template: {e}")
-            return False
+        title_cell.width = Inches(5.5)
 
     def _add_generated_cover_page(self, data: Dict[str, Any]):
         """Fallback: Generate cover page programmatically"""
