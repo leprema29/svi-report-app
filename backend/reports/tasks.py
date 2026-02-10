@@ -110,8 +110,9 @@ def process_surveillance_report(self, report_id: int):
         output_filename = f"report_{report_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
         output_path = os.path.join(output_dir, output_filename)
 
-        # Add title to extracted data for Word generation
+        # Add title and source filename to extracted data for Word generation
         extracted_data['title'] = report.title
+        extracted_data['source_filename'] = os.path.basename(file_path)
 
         generate_word_report(extracted_data, output_path)
 

@@ -102,9 +102,10 @@ class WordReportGenerator:
         run2._r.append(fldChar4)
 
     def generate_report(self, data: Dict[str, Any], output_path: str):
-        """Generate complete Word report"""
-        # Store generation time
+        """Generate complete Word report based on report type"""
+        # Store generation time and report type
         self.generation_time = datetime.now()
+        self.report_type = data.get('report_type', 'unknown')
 
         # Add cover page first (from template or fallback)
         self._add_cover_page(data)
@@ -114,6 +115,16 @@ class WordReportGenerator:
 
         # Add title
         self._add_title("RAPPORT DE VEILLE INFORMATIONNELLE")
+
+        # Add source file info
+        source_filename = data.get('source_filename', '')
+        if source_filename:
+            self._add_subtitle(f"Source: {source_filename}")
+
+        # Add report type
+        report_type_display = data.get('report_type_display', '')
+        if report_type_display:
+            self._add_subtitle(f"Type de rapport: {report_type_display}")
 
         # Add period
         period = data.get('period', {})
@@ -125,52 +136,184 @@ class WordReportGenerator:
 
         self.doc.add_paragraph()  # Spacing
 
-        # Add KPI Classification Section
-        self._add_section_heading("1. CLASSIFICATION DES INDICATEURS CLÉS DE PERFORMANCE")
-
-        # 1.1 Indicateurs de présence passive
-        self._add_subsection_heading("1.1. Indicateurs de présence passive")
-        self._add_presence_passive_table(data)
-
-        # 1.2 Indicateurs de présence active
-        self._add_subsection_heading("1.2. Indicateurs de présence active")
-        self._add_presence_active_table(data)
-
-        # 1.3 Indicateurs des tendances d'opinions (Sentiment)
-        self._add_subsection_heading("1.3. Indicateurs des tendances d'opinions (Sentiment)")
-        self._add_opinion_trends_table(data.get('sentiment', {}))
-
-        # 1.4 Indicateurs des émotions
-        self._add_subsection_heading("1.4. Indicateurs des émotions")
-        self._add_emotions_table(data.get('emotion', {}))
-
-        # Add sources distribution
-        self._add_section_heading("2. RÉPARTITION PAR SOURCE")
-        self._add_sources_table(data.get('sources', {}))
-
-        # Add languages
-        self._add_section_heading("3. RÉPARTITION PAR LANGUE")
-        self._add_languages_table(data.get('languages', {}))
-
-        # Add topics
-        self._add_section_heading("4. SUJETS PRINCIPAUX")
-        self._add_topics_table(data.get('topics', []))
-
-        # Add hashtags
-        self._add_section_heading("5. HASHTAGS POPULAIRES")
-        self._add_hashtags_table(data.get('hashtags', []))
-
-        # Add influencers
-        self._add_section_heading("6. INFLUENCEURS PRINCIPAUX")
-        self._add_influencers_table(data.get('influencers', []))
-
-        # Add reach breakdown (top posts)
-        self._add_section_heading("7. PORTÉE DES PUBLICATIONS")
-        self._add_reach_breakdown_table(data.get('reach_breakdown', []))
+        # Generate sections based on report type
+        if self.report_type == 'brand24_demographics':
+            self._generate_demographics_report(data)
+        elif self.report_type == 'brand24_analysis':
+            self._generate_brand24_analysis_report(data)
+        else:
+            # Default: Mention.com report or unknown
+            self._generate_mention_report(data)
 
         # Save document
         self.doc.save(output_path)
         return output_path
+
+    def _generate_mention_report(self, data: Dict[str, Any]):
+        """Generate sections for Mention.com report"""
+        section_num = 1
+
+        # 1. KPI Classification Section
+        self._add_section_heading(f"{section_num}. CLASSIFICATION DES INDICATEURS CLÉS DE PERFORMANCE")
+
+        # 1.1 Indicateurs de présence passive
+        if self._has_data(data.get('presence_passive', {})):
+            self._add_subsection_heading(f"{section_num}.1. Indicateurs de présence passive")
+            self._add_presence_passive_table(data)
+
+        # 1.2 Indicateurs des tendances d'opinions (Sentiment)
+        if self._has_data(data.get('sentiment', {})):
+            self._add_subsection_heading(f"{section_num}.2. Indicateurs des tendances d'opinions (Sentiment)")
+            self._add_opinion_trends_table(data.get('sentiment', {}))
+
+        # 1.3 Indicateurs des émotions
+        if self._has_data(data.get('emotion', {})):
+            self._add_subsection_heading(f"{section_num}.3. Indicateurs des émotions")
+            self._add_emotions_table(data.get('emotion', {}))
+
+        section_num += 1
+
+        # Sources distribution
+        if self._has_data(data.get('sources', {})):
+            self._add_section_heading(f"{section_num}. RÉPARTITION PAR SOURCE")
+            self._add_sources_table(data.get('sources', {}))
+            section_num += 1
+
+        # Languages
+        if self._has_data(data.get('languages', {})):
+            self._add_section_heading(f"{section_num}. RÉPARTITION PAR LANGUE")
+            self._add_languages_table(data.get('languages', {}))
+            section_num += 1
+
+        # Topics
+        if self._has_data(data.get('topics', [])):
+            self._add_section_heading(f"{section_num}. SUJETS PRINCIPAUX")
+            self._add_topics_table(data.get('topics', []))
+            section_num += 1
+
+        # Hashtags
+        if self._has_data(data.get('hashtags', [])):
+            self._add_section_heading(f"{section_num}. HASHTAGS POPULAIRES")
+            self._add_hashtags_table(data.get('hashtags', []))
+            section_num += 1
+
+        # Influencers
+        if self._has_data(data.get('influencers', [])):
+            self._add_section_heading(f"{section_num}. INFLUENCEURS PRINCIPAUX")
+            self._add_influencers_table(data.get('influencers', []))
+            section_num += 1
+
+        # Reach breakdown (top posts)
+        if self._has_data(data.get('reach_breakdown', [])):
+            self._add_section_heading(f"{section_num}. PORTÉE DES PUBLICATIONS")
+            self._add_reach_breakdown_table(data.get('reach_breakdown', []))
+
+    def _generate_brand24_analysis_report(self, data: Dict[str, Any]):
+        """Generate sections for Brand24 Analysis report"""
+        section_num = 1
+
+        # 1. KPI Classification Section
+        self._add_section_heading(f"{section_num}. CLASSIFICATION DES INDICATEURS CLÉS DE PERFORMANCE")
+
+        # 1.1 Indicateurs de présence passive
+        if self._has_data(data.get('presence_passive', {})):
+            self._add_subsection_heading(f"{section_num}.1. Indicateurs de présence passive")
+            self._add_presence_passive_table(data)
+
+        # 1.2 Indicateurs de présence active (likes, comments, shares)
+        if self._has_data(data.get('presence_active', {})):
+            self._add_subsection_heading(f"{section_num}.2. Indicateurs de présence active")
+            self._add_presence_active_table(data)
+
+        # 1.3 Indicateurs des tendances d'opinions (Sentiment)
+        if self._has_data(data.get('sentiment', {})):
+            self._add_subsection_heading(f"{section_num}.3. Indicateurs des tendances d'opinions (Sentiment)")
+            self._add_opinion_trends_table(data.get('sentiment', {}))
+
+        # 1.4 Presence Score (Brand24 specific)
+        presence_score = data.get('presence_score', {})
+        if self._has_data(presence_score):
+            self._add_subsection_heading(f"{section_num}.4. Score de Présence")
+            self._add_presence_score_info(presence_score)
+
+        section_num += 1
+
+        # Sources distribution
+        if self._has_data(data.get('sources', {})):
+            self._add_section_heading(f"{section_num}. RÉPARTITION PAR SOURCE")
+            self._add_sources_table(data.get('sources', {}))
+            section_num += 1
+
+        # Hashtags
+        if self._has_data(data.get('hashtags', [])):
+            self._add_section_heading(f"{section_num}. HASHTAGS POPULAIRES")
+            self._add_hashtags_table(data.get('hashtags', []))
+            section_num += 1
+
+        # Influencers
+        if self._has_data(data.get('influencers', [])):
+            self._add_section_heading(f"{section_num}. INFLUENCEURS PRINCIPAUX")
+            self._add_influencers_table(data.get('influencers', []))
+            section_num += 1
+
+        # AVE (Advertising Value Equivalent)
+        ave = data.get('ave', {})
+        if self._has_data(ave):
+            self._add_section_heading(f"{section_num}. VALEUR PUBLICITAIRE ÉQUIVALENTE (AVE)")
+            self._add_ave_info(ave)
+
+    def _generate_demographics_report(self, data: Dict[str, Any]):
+        """Generate sections for Brand24 Demographics report"""
+        section_num = 1
+        demographics = data.get('demographics', {})
+
+        # 1. Reach Overview
+        reach = data.get('reach', {})
+        if self._has_data(reach):
+            self._add_section_heading(f"{section_num}. PORTÉE TOTALE")
+            self._add_reach_summary(reach)
+            section_num += 1
+
+        # 2. Gender Distribution
+        gender = demographics.get('gender', {})
+        if self._has_data(gender):
+            self._add_section_heading(f"{section_num}. RÉPARTITION PAR GENRE")
+            self._add_gender_table(gender)
+            section_num += 1
+
+        # 3. Age Distribution
+        age = demographics.get('age', [])
+        if self._has_data(age):
+            self._add_section_heading(f"{section_num}. RÉPARTITION PAR ÂGE")
+            self._add_age_table(age)
+            section_num += 1
+
+        # 4. Countries Distribution
+        countries = demographics.get('countries', [])
+        if self._has_data(countries):
+            self._add_section_heading(f"{section_num}. RÉPARTITION PAR PAYS")
+            self._add_countries_table(countries)
+            section_num += 1
+
+        # 5. Occupation Distribution
+        occupation = demographics.get('occupation', [])
+        if self._has_data(occupation):
+            self._add_section_heading(f"{section_num}. RÉPARTITION PAR OCCUPATION")
+            self._add_occupation_table(occupation)
+            section_num += 1
+
+        # 6. Education Distribution
+        education = demographics.get('education', [])
+        if self._has_data(education):
+            self._add_section_heading(f"{section_num}. RÉPARTITION PAR NIVEAU D'ÉDUCATION")
+            self._add_education_table(education)
+            section_num += 1
+
+        # 7. Interests
+        interests = demographics.get('interests', [])
+        if self._has_data(interests):
+            self._add_section_heading(f"{section_num}. CENTRES D'INTÉRÊT")
+            self._add_interests_table(interests)
 
     def _add_generation_info(self):
         """Add report generation timestamp"""
@@ -784,6 +927,200 @@ class WordReportGenerator:
             reach_display = post.get('reach_display', '')
             reach_num = post.get('reach', 0)
             cells[2].text = reach_display if reach_display else f"{reach_num:,}"
+
+    # Brand24-specific methods
+    def _add_presence_score_info(self, presence_score: Dict[str, Any]):
+        """Add presence score information (Brand24)"""
+        if not self._has_data(presence_score):
+            self._add_no_data_message("Le score de présence n'est pas disponible.")
+            return
+
+        table = self.doc.add_table(rows=2, cols=2)
+        table.style = 'Light Grid Accent 1'
+
+        # Header
+        header_cells = table.rows[0].cells
+        header_cells[0].text = 'Indicateur'
+        header_cells[1].text = 'Valeur'
+        self._set_cell_background(header_cells[0], 'D5E8F0')
+        self._set_cell_background(header_cells[1], 'D5E8F0')
+
+        cells = table.rows[1].cells
+        cells[0].text = 'Score de Présence'
+        score = presence_score.get('score', 0)
+        percentile = presence_score.get('percentile', 0)
+        cells[1].text = f"{score}/100 (supérieur à {percentile}% des marques)"
+
+    def _add_ave_info(self, ave: Dict[str, Any]):
+        """Add AVE (Advertising Value Equivalent) information"""
+        if not self._has_data(ave):
+            self._add_no_data_message("La valeur publicitaire équivalente n'est pas disponible.")
+            return
+
+        para = self.doc.add_paragraph()
+        value = ave.get('value', 0)
+        currency = ave.get('currency', 'USD')
+        run = para.add_run(f"Valeur estimée: ${value:,} {currency}")
+        run.font.size = Pt(12)
+        run.bold = True
+
+    # Demographics-specific methods
+    def _add_reach_summary(self, reach: Dict[str, Any]):
+        """Add reach summary for demographics report"""
+        if not self._has_data(reach):
+            self._add_no_data_message("Les données de portée ne sont pas disponibles.")
+            return
+
+        para = self.doc.add_paragraph()
+        reach_value = reach.get('reach', 0)
+        run = para.add_run(f"Portée totale: {reach_value:,}")
+        run.font.size = Pt(14)
+        run.bold = True
+
+    def _add_gender_table(self, gender: Dict[str, float]):
+        """Add gender distribution table"""
+        if not self._has_data(gender):
+            self._add_no_data_message("La répartition par genre n'est pas disponible.")
+            return
+
+        table = self.doc.add_table(rows=3, cols=2)
+        table.style = 'Light Grid Accent 1'
+
+        # Header
+        header_cells = table.rows[0].cells
+        header_cells[0].text = 'Genre'
+        header_cells[1].text = 'Pourcentage'
+        self._set_cell_background(header_cells[0], 'D5E8F0')
+        self._set_cell_background(header_cells[1], 'D5E8F0')
+
+        # Data
+        cells1 = table.rows[1].cells
+        cells1[0].text = 'Femme'
+        cells1[1].text = f"{gender.get('female', 0):.1f}%"
+
+        cells2 = table.rows[2].cells
+        cells2[0].text = 'Homme'
+        cells2[1].text = f"{gender.get('male', 0):.1f}%"
+
+    def _add_age_table(self, age_data: list):
+        """Add age distribution table"""
+        if not self._has_data(age_data):
+            self._add_no_data_message("La répartition par âge n'est pas disponible.")
+            return
+
+        table = self.doc.add_table(rows=len(age_data) + 1, cols=3)
+        table.style = 'Light Grid Accent 1'
+
+        # Header
+        header_cells = table.rows[0].cells
+        header_cells[0].text = 'Tranche d\'âge'
+        header_cells[1].text = 'Pourcentage'
+        header_cells[2].text = 'Nombre'
+        self._set_cell_background(header_cells[0], 'D5E8F0')
+        self._set_cell_background(header_cells[1], 'D5E8F0')
+        self._set_cell_background(header_cells[2], 'D5E8F0')
+
+        for idx, item in enumerate(age_data, 1):
+            cells = table.rows[idx].cells
+            cells[0].text = item.get('age_group', '')
+            cells[1].text = f"{item.get('percentage', 0):.1f}%"
+            cells[2].text = f"{item.get('count', 0):,}"
+
+    def _add_countries_table(self, countries: list):
+        """Add countries distribution table"""
+        if not self._has_data(countries):
+            self._add_no_data_message("La répartition par pays n'est pas disponible.")
+            return
+
+        table = self.doc.add_table(rows=len(countries) + 1, cols=3)
+        table.style = 'Light Grid Accent 1'
+
+        # Header
+        header_cells = table.rows[0].cells
+        header_cells[0].text = 'Pays'
+        header_cells[1].text = 'Pourcentage'
+        header_cells[2].text = 'Portée'
+        self._set_cell_background(header_cells[0], 'D5E8F0')
+        self._set_cell_background(header_cells[1], 'D5E8F0')
+        self._set_cell_background(header_cells[2], 'D5E8F0')
+
+        for idx, item in enumerate(countries, 1):
+            cells = table.rows[idx].cells
+            cells[0].text = item.get('country', '')
+            cells[1].text = f"{item.get('percentage', 0):.1f}%"
+            cells[2].text = f"{item.get('reach', 0):,}"
+
+    def _add_occupation_table(self, occupations: list):
+        """Add occupation distribution table"""
+        if not self._has_data(occupations):
+            self._add_no_data_message("La répartition par occupation n'est pas disponible.")
+            return
+
+        table = self.doc.add_table(rows=len(occupations) + 1, cols=3)
+        table.style = 'Light Grid Accent 1'
+
+        # Header
+        header_cells = table.rows[0].cells
+        header_cells[0].text = 'Occupation'
+        header_cells[1].text = 'Pourcentage'
+        header_cells[2].text = 'Nombre'
+        self._set_cell_background(header_cells[0], 'D5E8F0')
+        self._set_cell_background(header_cells[1], 'D5E8F0')
+        self._set_cell_background(header_cells[2], 'D5E8F0')
+
+        for idx, item in enumerate(occupations, 1):
+            cells = table.rows[idx].cells
+            cells[0].text = item.get('occupation', '')
+            cells[1].text = f"{item.get('percentage', 0):.1f}%"
+            cells[2].text = f"{item.get('count', 0):,}"
+
+    def _add_education_table(self, education: list):
+        """Add education distribution table"""
+        if not self._has_data(education):
+            self._add_no_data_message("La répartition par niveau d'éducation n'est pas disponible.")
+            return
+
+        table = self.doc.add_table(rows=len(education) + 1, cols=3)
+        table.style = 'Light Grid Accent 1'
+
+        # Header
+        header_cells = table.rows[0].cells
+        header_cells[0].text = 'Niveau d\'éducation'
+        header_cells[1].text = 'Pourcentage'
+        header_cells[2].text = 'Nombre'
+        self._set_cell_background(header_cells[0], 'D5E8F0')
+        self._set_cell_background(header_cells[1], 'D5E8F0')
+        self._set_cell_background(header_cells[2], 'D5E8F0')
+
+        for idx, item in enumerate(education, 1):
+            cells = table.rows[idx].cells
+            cells[0].text = item.get('level', '')
+            cells[1].text = f"{item.get('percentage', 0):.1f}%"
+            cells[2].text = f"{item.get('count', 0):,}"
+
+    def _add_interests_table(self, interests: list):
+        """Add interests distribution table"""
+        if not self._has_data(interests):
+            self._add_no_data_message("Les centres d'intérêt ne sont pas disponibles.")
+            return
+
+        table = self.doc.add_table(rows=len(interests) + 1, cols=3)
+        table.style = 'Light Grid Accent 1'
+
+        # Header
+        header_cells = table.rows[0].cells
+        header_cells[0].text = 'Centre d\'intérêt'
+        header_cells[1].text = 'Pourcentage'
+        header_cells[2].text = 'Portée'
+        self._set_cell_background(header_cells[0], 'D5E8F0')
+        self._set_cell_background(header_cells[1], 'D5E8F0')
+        self._set_cell_background(header_cells[2], 'D5E8F0')
+
+        for idx, item in enumerate(interests, 1):
+            cells = table.rows[idx].cells
+            cells[0].text = item.get('interest', '')
+            cells[1].text = f"{item.get('percentage', 0):.1f}%"
+            cells[2].text = f"{item.get('reach', 0):,}"
 
     def _set_cell_background(self, cell, color: str):
         """Set cell background color"""
