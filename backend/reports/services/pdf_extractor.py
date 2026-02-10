@@ -218,12 +218,24 @@ class PDFKPIExtractor:
 
     def _extract_sources_data(self) -> Dict[str, int]:
         """
-        Extract sources distribution - Mention format:
+        Extract sources distribution ONLY from 'Sources' section - Mention format:
+        Sources (Candidat Paul Bi…
         Facebook
         252 (98.05%)
         """
         sources_data = {}
 
+        # Find the Sources section
+        sources_section = re.search(
+            r'Sources\s*(?:\([^)]+\))?\s*[\d/]+\s*to\s*[\d/]+.*?(?=Sentiment|Emotion|Languages|$)',
+            self.full_text,
+            re.DOTALL | re.IGNORECASE
+        )
+
+        # Only search within Sources section, or use full text as fallback
+        search_text = sources_section.group() if sources_section else self.full_text
+
+        # Only look for social media platforms (not websites or hashtags)
         platforms = [
             'Facebook', 'Instagram', 'Twitter', 'X', 'TikTok',
             'YouTube', 'LinkedIn', 'Videos', 'Web', 'News', 'Blogs'
@@ -237,7 +249,7 @@ class PDFKPIExtractor:
             else:
                 pattern = rf'{platform}\s*\n?\s*(\d+)\s*\([\d.]+%\)'
 
-            match = re.search(pattern, self.full_text, re.IGNORECASE)
+            match = re.search(pattern, search_text, re.IGNORECASE)
             if match:
                 sources_data[platform] = int(match.group(1))
 

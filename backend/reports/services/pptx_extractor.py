@@ -287,31 +287,44 @@ class PPTXKPIExtractor:
         return sentiment_data
 
     def _extract_sources_data(self) -> Dict[str, int]:
-        """Extract sources from 'Most active sites' table"""
+        """Extract sources ONLY from 'Most active sites' section/table"""
         sources_data = {}
 
-        # Look for the sources table
+        # First, check if we have a "Most active sites" slide/section
+        most_active_sites_found = False
+        for slide_text in self.slides_text:
+            if 'Most active sites' in slide_text or 'most active sites' in slide_text.lower():
+                most_active_sites_found = True
+                break
+
+        if not most_active_sites_found:
+            return sources_data
+
+        # Look for the sources table - must have 'Source' header and site domains
         for table in self.tables:
             if len(table) > 1:
-                # Check if this looks like a sources table
                 header = table[0] if table else []
-                if any('Source' in str(cell) for cell in header) or \
-                   any('Mentions' in str(cell) for cell in header):
+                # Only consider tables with 'Source' column header
+                if any('Source' in str(cell) for cell in header):
                     for row in table[1:]:
                         if len(row) >= 2:
                             source = row[1] if row[0] == '' else row[0]
                             mentions = row[-1]  # Last column is usually mentions
                             source = source.strip()
-                            if source and source not in ['', 'Source']:
+                            # Only accept valid site domains (contain a dot)
+                            if source and '.' in source and source not in ['', 'Source']:
                                 try:
-                                    sources_data[source] = self._parse_number(mentions)
+                                    count = self._parse_number(mentions)
+                                    if count > 0:
+                                        sources_data[source] = count
                                 except:
                                     pass
 
-        # Also try regex patterns
+        # Fallback: try regex patterns only for common platforms with .com/.org endings
         if not sources_data:
             platforms = ['x.com', 'youtube.com', 'facebook.com', 'tiktok.com',
-                         'instagram.com', 'twitter.com', 'linkedin.com']
+                         'instagram.com', 'twitter.com', 'linkedin.com',
+                         'actucameroun.com', 'camer.be', 'rfi.fr']
             for platform in platforms:
                 pattern = rf'{re.escape(platform)}\s+(\d+)'
                 match = re.search(pattern, self.full_text, re.IGNORECASE)
