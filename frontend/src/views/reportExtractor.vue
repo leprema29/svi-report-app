@@ -105,6 +105,18 @@
             </v-chip>
           </template>
 
+          <!-- Report Type Column -->
+          <template v-slot:item.report_type="{ item }">
+            <v-chip
+              :color="getReportTypeColor(item.report_type)"
+              small
+              variant="outlined"
+            >
+              <v-icon left small>{{ getReportTypeIcon(item.report_type) }}</v-icon>
+              {{ getReportTypeLabel(item.report_type) }}
+            </v-chip>
+          </template>
+
           <!-- Status Column -->
           <template v-slot:item.status="{ item }">
             <v-chip
@@ -234,6 +246,33 @@
         </v-card-title>
 
         <v-card-text class="pt-4">
+          <!-- Report Type Info -->
+          <v-alert
+            v-if="selectedReport.report_type"
+            :color="getReportTypeColor(selectedReport.report_type)"
+            variant="tonal"
+            class="mb-4"
+          >
+            <div class="d-flex align-center">
+              <v-icon :color="getReportTypeColor(selectedReport.report_type)" class="mr-2">
+                {{ getReportTypeIcon(selectedReport.report_type) }}
+              </v-icon>
+              <div>
+                <strong>{{ selectedReport.report_type_display || getReportTypeLabel(selectedReport.report_type) }}</strong>
+                <div class="text-caption mt-1">
+                  <span class="text-success mr-3" v-if="selectedReport.available_kpis?.length">
+                    <v-icon x-small color="success">mdi-check</v-icon>
+                    Disponible: {{ selectedReport.available_kpis.join(', ') }}
+                  </span>
+                  <span class="text-error" v-if="selectedReport.unavailable_kpis?.length">
+                    <v-icon x-small color="error">mdi-close</v-icon>
+                    Non disponible: {{ selectedReport.unavailable_kpis.slice(0, 5).join(', ') }}{{ selectedReport.unavailable_kpis.length > 5 ? '...' : '' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </v-alert>
+
           <!-- Period -->
           <v-row class="mb-3">
             <v-col cols="12">
@@ -442,6 +481,99 @@
               </v-chip-group>
             </v-col>
           </v-row>
+
+          <!-- Demographics Section (for Brand24 Demographics reports) -->
+          <template v-if="selectedReport.demographics_data && Object.keys(selectedReport.demographics_data).length">
+            <!-- Gender Distribution -->
+            <v-row v-if="selectedReport.demographics_data.gender" class="mt-4">
+              <v-col cols="12" md="6">
+                <h3 class="mb-3">7. Distribution par Genre</h3>
+                <v-simple-table dense class="elevation-1">
+                  <template v-slot:default>
+                    <thead>
+                      <tr class="bg-pink-lighten-4">
+                        <th class="text-left">Genre</th>
+                        <th class="text-right">Pourcentage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><v-icon small color="pink" class="mr-1">mdi-gender-female</v-icon> Femme</td>
+                        <td class="text-right">{{ selectedReport.demographics_data.gender.female || 0 }}%</td>
+                      </tr>
+                      <tr>
+                        <td><v-icon small color="blue" class="mr-1">mdi-gender-male</v-icon> Homme</td>
+                        <td class="text-right">{{ selectedReport.demographics_data.gender.male || 0 }}%</td>
+                      </tr>
+                    </tbody>
+                  </template>
+                </v-simple-table>
+              </v-col>
+
+              <!-- Age Distribution -->
+              <v-col cols="12" md="6" v-if="selectedReport.demographics_data.age?.length">
+                <h3 class="mb-3">8. Distribution par Âge</h3>
+                <v-simple-table dense class="elevation-1">
+                  <template v-slot:default>
+                    <thead>
+                      <tr class="bg-teal-lighten-4">
+                        <th class="text-left">Tranche d'Âge</th>
+                        <th class="text-right">Pourcentage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="age in selectedReport.demographics_data.age" :key="age.age_group">
+                        <td>{{ age.age_group }}</td>
+                        <td class="text-right">{{ age.percentage }}%</td>
+                      </tr>
+                    </tbody>
+                  </template>
+                </v-simple-table>
+              </v-col>
+            </v-row>
+
+            <!-- Countries Distribution -->
+            <v-row v-if="selectedReport.demographics_data.countries?.length" class="mt-4">
+              <v-col cols="12">
+                <h3 class="mb-3">9. Distribution par Pays</h3>
+                <v-simple-table dense class="elevation-1">
+                  <template v-slot:default>
+                    <thead>
+                      <tr class="bg-cyan-lighten-4">
+                        <th class="text-left">Pays</th>
+                        <th class="text-right">Pourcentage</th>
+                        <th class="text-right">Portée</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="country in selectedReport.demographics_data.countries.slice(0, 10)" :key="country.country">
+                        <td>{{ country.country }}</td>
+                        <td class="text-right">{{ country.percentage }}%</td>
+                        <td class="text-right">{{ formatNumber(country.reach) }}</td>
+                      </tr>
+                    </tbody>
+                  </template>
+                </v-simple-table>
+              </v-col>
+            </v-row>
+
+            <!-- Interests -->
+            <v-row v-if="selectedReport.demographics_data.interests?.length" class="mt-4">
+              <v-col cols="12">
+                <h3 class="mb-3">10. Centres d'Intérêt</h3>
+                <v-chip-group>
+                  <v-chip
+                    v-for="interest in selectedReport.demographics_data.interests.slice(0, 10)"
+                    :key="interest.interest"
+                    color="teal"
+                    text-color="white"
+                  >
+                    {{ interest.interest }}: {{ interest.percentage }}%
+                  </v-chip>
+                </v-chip-group>
+              </v-col>
+            </v-row>
+          </template>
         </v-card-text>
 
         <v-card-actions>
@@ -503,7 +635,8 @@ export default {
 
       headers: [
         { title: 'ID', key: 'id', sortable: true },
-        { title: 'Type', key: 'file_type', sortable: true },
+        { title: 'Format', key: 'file_type', sortable: true },
+        { title: 'Type de Rapport', key: 'report_type', sortable: true },
         { title: 'Titre', key: 'title', sortable: true },
         { title: 'Statut', key: 'status', sortable: true },
         { title: 'Période', key: 'period', sortable: false },
@@ -745,6 +878,36 @@ export default {
         failed: 'Échoué',
       }
       return texts[status] || status
+    },
+
+    getReportTypeColor(reportType) {
+      const colors = {
+        'mention_dashboard': 'blue',
+        'brand24_analysis': 'green',
+        'brand24_demographics': 'purple',
+        'unknown': 'grey',
+      }
+      return colors[reportType] || 'grey'
+    },
+
+    getReportTypeIcon(reportType) {
+      const icons = {
+        'mention_dashboard': 'mdi-chart-bar',
+        'brand24_analysis': 'mdi-chart-line',
+        'brand24_demographics': 'mdi-account-group',
+        'unknown': 'mdi-help-circle',
+      }
+      return icons[reportType] || 'mdi-file-document'
+    },
+
+    getReportTypeLabel(reportType) {
+      const labels = {
+        'mention_dashboard': 'Mention Dashboard',
+        'brand24_analysis': 'Brand24 Analysis',
+        'brand24_demographics': 'Brand24 Demographics',
+        'unknown': 'Type Inconnu',
+      }
+      return labels[reportType] || reportType
     },
 
     formatDate(dateString) {

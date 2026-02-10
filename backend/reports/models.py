@@ -32,7 +32,16 @@ class SurveillanceReport(models.Model):
         ('pptx', 'PPTX'),
     ]
 
+    REPORT_TYPE_CHOICES = [
+        ('mention_dashboard', 'Mention.com Dashboard'),
+        ('brand24_analysis', 'Brand24 Analysis'),
+        ('brand24_demographics', 'Brand24 Demographics'),
+        ('unknown', 'Unknown'),
+    ]
+
     title = models.CharField(max_length=255)
+    report_type = models.CharField(max_length=50, choices=REPORT_TYPE_CHOICES, default='unknown')
+    report_type_display = models.CharField(max_length=100, blank=True)
 
     # Support both PDF and PPTX
     original_file = models.FileField(
@@ -74,6 +83,14 @@ class SurveillanceReport(models.Model):
     topics_data = models.JSONField(default=list)
     hashtags_data = models.JSONField(default=list)
     influencers_data = models.JSONField(default=list)
+
+    # Demographics data (for Brand24 Demographics reports)
+    demographics_data = models.JSONField(default=dict, blank=True)
+    # Structure: {gender, age, countries, occupation, education, interests}
+
+    # Available/Unavailable KPIs for this report type
+    available_kpis = models.JSONField(default=list, blank=True)
+    unavailable_kpis = models.JSONField(default=list, blank=True)
 
     # Metadata
     status = models.CharField(max_length=20, choices=REPORT_STATUS, default='pending')

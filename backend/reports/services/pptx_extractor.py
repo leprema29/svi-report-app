@@ -1,393 +1,606 @@
 """
 PPTX KPI Extraction Service
-Extracts surveillance data from monitoring platform PPTX files
+Extracts surveillance data from Brand24 monitoring platform PPTX files
+Supports both Analysis and Demographics report types
 """
 import re
 from pptx import Presentation
-from pptx.util import Inches
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 
 class PPTXKPIExtractor:
-    """Extract KPIs from surveillance monitoring PPTX files"""
+    """Extract KPIs from Brand24 surveillance monitoring PPTX files"""
 
     def __init__(self, pptx_path: str):
         self.pptx_path = pptx_path
         self.extracted_data = {}
+        self.full_text = ""
+        self.slides_text = []
+        self.tables = []
+        self.report_type = None
 
     def extract_all_kpis(self) -> Dict[str, Any]:
         """Main method to extract all KPIs from PPTX"""
         prs = Presentation(self.pptx_path)
 
-        # Extract all text from slides
-        full_text = ""
+        # Extract text from all slides
+        self.slides_text = []
+        self.tables = []
+
         for slide in prs.slides:
+            slide_text = ""
+            slide_tables = []
+
             for shape in slide.shapes:
                 if hasattr(shape, "text"):
-                    full_text += shape.text + "\n"
+                    slide_text += shape.text + "\n"
+
                 # Handle tables
                 if shape.has_table:
+                    table_data = []
                     for row in shape.table.rows:
-                        for cell in row.cells:
-                            full_text += cell.text + "\t"
-                        full_text += "\n"
+                        row_data = [cell.text for cell in row.cells]
+                        table_data.append(row_data)
+                    slide_tables.append(table_data)
+
+            self.slides_text.append(slide_text)
+            self.tables.extend(slide_tables)
+
+        self.full_text = "\n".join(self.slides_text)
+
+        # Detect report type
+        self.report_type = self._detect_report_type()
+
+        if self.report_type == "brand24_demographics":
+            return self._extract_demographics_report()
+        else:
+            return self._extract_analysis_report()
+
+    def _detect_report_type(self) -> str:
+        """Detect whether this is an Analysis or Demographics report"""
+        first_slide = self.slides_text[0] if self.slides_text else ""
+
+        if "Demographics" in first_slide or "Gender Distribution" in self.full_text:
+            return "brand24_demographics"
+        else:
+            return "brand24_analysis"
+
+    def _extract_analysis_report(self) -> Dict[str, Any]:
+        """Extract data from Brand24 Analysis report"""
+        # KPIs available in Analysis report
+        available_kpis = [
+            "mentions", "reach", "sentiment", "likes", "comments", "shares",
+            "sources", "hashtags", "influencers", "presence_score"
+        ]
+        unavailable_kpis = [
+            "demographics", "gender", "age", "countries", "occupation",
+            "education", "interests"
+        ]
 
         self.extracted_data = {
-            'title': self._extract_title(full_text),
-            'period': self._extract_period(full_text),
-            'presence_passive': self._extract_presence_passive(full_text),
-            'presence_active': self._extract_presence_active(full_text),
-            'sentiment': self._extract_sentiment_data(full_text),
-            'emotion': self._extract_emotion_data(full_text),
-            'sources': self._extract_sources_data(full_text),
-            'languages': self._extract_languages_data(full_text),
-            'topics': self._extract_topics(full_text),
-            'hashtags': self._extract_hashtags(full_text),
-            'influencers': self._extract_influencers(full_text),
-            # Keep legacy fields for backwards compatibility
-            'volume': self._extract_volume_data(full_text),
-            'reach': self._extract_reach_data(full_text),
+            'report_type': 'brand24_analysis',
+            'report_type_display': 'Brand24 Analysis Report',
+            'available_kpis': available_kpis,
+            'unavailable_kpis': unavailable_kpis,
+            'title': self._extract_title(),
+            'period': self._extract_period(),
+            'volume': self._extract_volume_data(),
+            'reach': self._extract_reach_data(),
+            'presence_passive': self._build_presence_passive(),
+            'presence_active': self._extract_presence_active(),
+            'sentiment': self._extract_sentiment_data(),
+            'emotion': {},  # Not in Brand24 Analysis
+            'sources': self._extract_sources_data(),
+            'languages': {},  # Not directly in Brand24 Analysis
+            'topics': [],  # Not in standard Brand24 Analysis
+            'hashtags': self._extract_hashtags(),
+            'influencers': self._extract_influencers(),
+            'presence_score': self._extract_presence_score(),
+            'ave': self._extract_ave(),
         }
 
         return self.extracted_data
 
-    def _extract_title(self, text: str) -> str:
-        """Extract report title"""
-        lines = text.split('\n')
-        for line in lines:
-            if line.strip():
-                return line.strip()
-        return "Surveillance Report"
-
-    def _extract_period(self, text: str) -> Dict[str, str]:
-        """Extract date period"""
-        # Pattern: DD/MM/YYYY to DD/MM/YYYY or various formats
-        patterns = [
-            r'(\d{2}/\d{2}/\d{4})\s+(?:to|au|à|-)\s+(\d{2}/\d{2}/\d{4})',
-            r'(\d{2}\s+\w+\s+\d{4})\s+(?:to|au|à|-)\s+(\d{2}\s+\w+\s+\d{4})',
-            r'du\s+(\d{2}/\d{2}/\d{4})\s+au\s+(\d{2}/\d{2}/\d{4})',
-            r'période\s*:\s*(\d{2}/\d{2}/\d{4})\s*-\s*(\d{2}/\d{2}/\d{4})',
+    def _extract_demographics_report(self) -> Dict[str, Any]:
+        """Extract data from Brand24 Demographics report"""
+        # KPIs available in Demographics report
+        available_kpis = [
+            "reach", "gender", "age", "countries", "occupation",
+            "education", "interests"
+        ]
+        unavailable_kpis = [
+            "mentions", "sentiment", "likes", "comments", "shares",
+            "hashtags", "influencers", "presence_score"
         ]
 
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                return {
-                    'start': match.group(1),
-                    'end': match.group(2)
-                }
+        self.extracted_data = {
+            'report_type': 'brand24_demographics',
+            'report_type_display': 'Brand24 Demographics Report',
+            'available_kpis': available_kpis,
+            'unavailable_kpis': unavailable_kpis,
+            'title': self._extract_title(),
+            'period': self._extract_period(),
+            'volume': {'mentions': 0, 'change_percent': 0.0},
+            'reach': self._extract_demographics_reach(),
+            'presence_passive': {'followers': 0, 'views': 0, 'potential_reach': 0},
+            'presence_active': {'comments': 0, 'likes': 0, 'shares': 0},
+            'sentiment': {},
+            'emotion': {},
+            'sources': {},
+            'languages': {},
+            'topics': [],
+            'hashtags': [],
+            'influencers': [],
+            # Demographics-specific data
+            'demographics': {
+                'gender': self._extract_gender_distribution(),
+                'age': self._extract_age_distribution(),
+                'countries': self._extract_countries_distribution(),
+                'occupation': self._extract_occupation_distribution(),
+                'education': self._extract_education_distribution(),
+                'interests': self._extract_interests(),
+            }
+        }
+
+        return self.extracted_data
+
+    def _extract_title(self) -> str:
+        """Extract report title from first slide"""
+        if self.slides_text:
+            lines = self.slides_text[0].split('\n')
+            for line in lines:
+                line = line.strip()
+                if line and len(line) > 3:
+                    # Remove " - Analysis" or " - Demographics Report" suffix
+                    title = re.sub(r'\s*-\s*(Analysis|Demographics Report).*$', '', line)
+                    return title
+        return "Surveillance Report"
+
+    def _extract_period(self) -> Dict[str, str]:
+        """Extract date period from first slide"""
+        if self.slides_text:
+            first_slide = self.slides_text[0]
+
+            # Brand24 format: 2025-11-01 - 2025-12-31
+            patterns = [
+                r'(\d{4}-\d{2}-\d{2})\s*-\s*(\d{4}-\d{2}-\d{2})',
+                r'(\d{2}/\d{2}/\d{4})\s*-\s*(\d{2}/\d{2}/\d{4})',
+            ]
+
+            for pattern in patterns:
+                match = re.search(pattern, first_slide)
+                if match:
+                    return {
+                        'start': match.group(1),
+                        'end': match.group(2)
+                    }
+
         return {'start': '', 'end': ''}
 
-    def _extract_presence_passive(self, text: str) -> Dict[str, Any]:
-        """Extract presence passive indicators (followers, views, reach)"""
-        data = {
-            'followers': 0,
+    def _extract_volume_data(self) -> Dict[str, Any]:
+        """Extract mentions volume from Overview slide (slide 3)"""
+        data = {'mentions': 0, 'change_percent': 0.0}
+
+        # Look for "Total mentions" followed by number
+        pattern = r'Total mentions\s*\n?\s*([\d,]+)\s*\n?\s*([+-]?\d+)%?'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            data['mentions'] = self._parse_number(match.group(1))
+            data['change_percent'] = float(match.group(2))
+
+        return data
+
+    def _extract_reach_data(self) -> Dict[str, Any]:
+        """Extract reach metrics from Overview slide"""
+        data = {'reach': 0, 'change_percent': 0.0}
+
+        # Look for "Total reach" followed by number (handles M for millions, K for thousands)
+        pattern = r'Total reach\s*\n?\s*([\d.,]+[MK]?)\s*\n?\s*([+-]?\d+)%?'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            data['reach'] = self._parse_reach_number(match.group(1))
+            data['change_percent'] = float(match.group(2))
+
+        return data
+
+    def _build_presence_passive(self) -> Dict[str, Any]:
+        """Build presence passive data"""
+        reach_data = self._extract_reach_data()
+
+        # Extract social media reach
+        social_reach = 0
+        pattern = r'Social media reach\s*\n?\s*([\d.,]+[MK]?)'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            social_reach = self._parse_reach_number(match.group(1))
+
+        return {
+            'followers': 0,  # Extracted from influencer tables if needed
             'followers_evolution': 0.0,
             'views': 0,
             'views_evolution': 0.0,
-            'potential_reach': 0,
-            'reach_evolution': 0.0
+            'potential_reach': reach_data.get('reach', 0),
+            'reach_evolution': reach_data.get('change_percent', 0.0),
+            'social_media_reach': social_reach,
         }
 
-        # Extract followers
-        followers_patterns = [
-            r'[Ff]ollowers?\s*[:\s]*([0-9,.\s]+)',
-            r'[Aa]bonnés?\s*[:\s]*([0-9,.\s]+)',
-            r'[Ss]ubscribers?\s*[:\s]*([0-9,.\s]+)',
-        ]
-        for pattern in followers_patterns:
-            match = re.search(pattern, text)
-            if match:
-                data['followers'] = self._parse_number(match.group(1))
-                break
-
-        # Extract followers evolution
-        followers_evo_pattern = r'[Ff]ollowers?.*?([+-]?\d+\.?\d*)%'
-        match = re.search(followers_evo_pattern, text)
-        if match:
-            data['followers_evolution'] = float(match.group(1))
-
-        # Extract views/impressions
-        views_patterns = [
-            r'[Vv]ues?\s*[:\s]*([0-9,.\s]+)',
-            r'[Ii]mpressions?\s*[:\s]*([0-9,.\s]+)',
-            r'[Vv]iews?\s*[:\s]*([0-9,.\s]+)',
-        ]
-        for pattern in views_patterns:
-            match = re.search(pattern, text)
-            if match:
-                data['views'] = self._parse_number(match.group(1))
-                break
-
-        # Extract views evolution
-        views_evo_pattern = r'[Vv]ues?.*?([+-]?\d+\.?\d*)%|[Ii]mpressions?.*?([+-]?\d+\.?\d*)%'
-        match = re.search(views_evo_pattern, text)
-        if match:
-            data['views_evolution'] = float(match.group(1) or match.group(2))
-
-        # Extract potential reach
-        reach_patterns = [
-            r'[Pp]ortée\s*(?:potentielle)?\s*[:\s]*([0-9,.\s]+)',
-            r'[Rr]each\s*[:\s]*([0-9,.\s]+)',
-            r'[Pp]otential\s*[Rr]each\s*[:\s]*([0-9,.\s]+)',
-        ]
-        for pattern in reach_patterns:
-            match = re.search(pattern, text)
-            if match:
-                data['potential_reach'] = self._parse_number(match.group(1))
-                break
-
-        # Extract reach evolution
-        reach_evo_pattern = r'[Rr]each.*?([+-]?\d+\.?\d*)%|[Pp]ortée.*?([+-]?\d+\.?\d*)%'
-        match = re.search(reach_evo_pattern, text)
-        if match:
-            data['reach_evolution'] = float(match.group(1) or match.group(2) or 0)
-
-        return data
-
-    def _extract_presence_active(self, text: str) -> Dict[str, int]:
-        """Extract presence active indicators (comments, likes, shares)"""
+    def _extract_presence_active(self) -> Dict[str, Any]:
+        """Extract presence active indicators (comments, likes, shares) from Overview"""
         data = {
             'comments': 0,
             'likes': 0,
-            'shares': 0
+            'shares': 0,
+            'total_interactions': 0
         }
 
-        # Extract comments
-        comments_patterns = [
-            r'[Cc]ommentaires?\s*[:\s]*([0-9,.\s]+)',
-            r'[Cc]omments?\s*[:\s]*([0-9,.\s]+)',
-        ]
-        for pattern in comments_patterns:
-            match = re.search(pattern, text)
-            if match:
-                data['comments'] = self._parse_number(match.group(1))
-                break
+        # Extract likes (reactions)
+        pattern = r'Social media reactions.*?\s*\n?\s*([\d,]+[MK]?)'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            data['likes'] = self._parse_reach_number(match.group(1))
 
-        # Extract likes
-        likes_patterns = [
-            r'[Ll]ikes?\s*[:\s]*([0-9,.\s]+)',
-            r"[Jj]'?aime\s*[:\s]*([0-9,.\s]+)",
-            r'[Mm]entions?\s*[Jj]\'?aime\s*[:\s]*([0-9,.\s]+)',
-        ]
-        for pattern in likes_patterns:
-            match = re.search(pattern, text)
-            if match:
-                data['likes'] = self._parse_number(match.group(1))
-                break
+        # Extract comments
+        pattern = r'Social media comments\s*\n?\s*([\d,]+)'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            data['comments'] = self._parse_number(match.group(1))
 
         # Extract shares
-        shares_patterns = [
-            r'[Pp]artages?\s*[:\s]*([0-9,.\s]+)',
-            r'[Ss]hares?\s*[:\s]*([0-9,.\s]+)',
-        ]
-        for pattern in shares_patterns:
-            match = re.search(pattern, text)
-            if match:
-                data['shares'] = self._parse_number(match.group(1))
-                break
+        pattern = r'Social media shares\s*\n?\s*([\d,\s]+)'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            data['shares'] = self._parse_number(match.group(1))
+
+        # Extract total interactions
+        pattern = r'Total social media interactions\s*\n?\s*([\d,]+[MK]?)'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            data['total_interactions'] = self._parse_reach_number(match.group(1))
 
         return data
 
-    def _extract_volume_data(self, text: str) -> Dict[str, Any]:
-        """Extract mentions volume and change percentage (legacy)"""
-        data = {'mentions': 0, 'change_percent': 0.0}
-
-        # Extract mentions count
-        mentions_pattern = r'[Mm]entions?\s*[:\s]*(\d+)'
-        mentions_match = re.search(mentions_pattern, text)
-        if mentions_match:
-            data['mentions'] = int(mentions_match.group(1))
-
-        # Extract percentage change
-        percent_pattern = r'(-?\d+\.?\d*)%'
-        percent_matches = re.findall(percent_pattern, text)
-        if percent_matches:
-            data['change_percent'] = float(percent_matches[0])
-
-        return data
-
-    def _extract_reach_data(self, text: str) -> Dict[str, Any]:
-        """Extract reach metrics (legacy)"""
-        data = {'reach': 0, 'change_percent': 0.0}
-
-        # Extract reach count
-        reach_pattern = r'[Rr]each\s*[:\s]*([\d,.\s]+)'
-        reach_match = re.search(reach_pattern, text)
-        if reach_match:
-            data['reach'] = self._parse_number(reach_match.group(1))
-
-        # Extract reach percentage change
-        reach_percent_pattern = r'[Rr]each.*?(-?\d+\.?\d*)%'
-        reach_percent_match = re.search(reach_percent_pattern, text)
-        if reach_percent_match:
-            data['change_percent'] = float(reach_percent_match.group(1))
-
-        return data
-
-    def _extract_sentiment_data(self, text: str) -> Dict[str, int]:
-        """Extract sentiment distribution"""
+    def _extract_sentiment_data(self) -> Dict[str, int]:
+        """Extract sentiment data from Overview"""
         sentiment_data = {}
 
-        # Pattern variations for sentiment
-        patterns = [
-            r'[Pp]ositi[fv]e?\s*[:\s]*(\d+)',
-            r'[Nn][eé]gati[fv]e?\s*[:\s]*(\d+)',
-            r'[Nn]eutr[ea]l?\s*[:\s]*(\d+)',
-        ]
+        # Extract positive mentions
+        pattern = r'Positive mentions\s*\n?\s*(\d+)'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            sentiment_data['positive'] = int(match.group(1))
 
-        sentiment_names = ['positive', 'negative', 'neutral']
+        # Extract negative mentions
+        pattern = r'Negative mentions\s*\n?\s*(\d+)'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            sentiment_data['negative'] = int(match.group(1))
 
-        for pattern, name in zip(patterns, sentiment_names):
-            match = re.search(pattern, text)
-            if match:
-                sentiment_data[name] = int(match.group(1))
-
-        # Alternative pattern: Sentiment (count) percentage
-        alt_pattern = r'(Positive|Negative|Neutral|Positif|Négatif|Neutre)\s+(\d+)\s+\([\d.]+%\)'
-        matches = re.findall(alt_pattern, text, re.IGNORECASE)
-
-        for sentiment, count in matches:
-            key = sentiment.lower()
-            if key in ['positif']:
-                key = 'positive'
-            elif key in ['négatif', 'negatif']:
-                key = 'negative'
-            elif key in ['neutre']:
-                key = 'neutral'
-            sentiment_data[key] = int(count)
+        # Calculate neutral (total - positive - negative)
+        volume = self._extract_volume_data()
+        total = volume.get('mentions', 0)
+        positive = sentiment_data.get('positive', 0)
+        negative = sentiment_data.get('negative', 0)
+        if total > 0:
+            sentiment_data['neutral'] = max(0, total - positive - negative)
 
         return sentiment_data
 
-    def _extract_emotion_data(self, text: str) -> Dict[str, int]:
-        """Extract emotion distribution"""
-        emotion_data = {}
-
-        emotions = {
-            'joy': ['Joy', 'Joie'],
-            'neutral': ['Neutral', 'Neutre'],
-            'anger': ['Anger', 'Colère'],
-            'sadness': ['Sadness', 'Tristesse'],
-            'surprise': ['Surprise'],
-            'fear': ['Fear', 'Peur'],
-            'disgust': ['Disgust', 'Dégoût']
-        }
-
-        for emotion_key, emotion_names in emotions.items():
-            for name in emotion_names:
-                pattern = rf'{name}\s+(\d+)\s*(?:\([\d.]+%\))?'
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match:
-                    emotion_data[emotion_key] = int(match.group(1))
-                    break
-
-        return emotion_data
-
-    def _extract_sources_data(self, text: str) -> Dict[str, int]:
-        """Extract sources distribution"""
+    def _extract_sources_data(self) -> Dict[str, int]:
+        """Extract sources from 'Most active sites' table"""
         sources_data = {}
 
-        platforms = [
-            'Facebook', 'Instagram', 'Twitter', 'X', 'TikTok',
-            'YouTube', 'LinkedIn', 'WhatsApp', 'Telegram'
-        ]
+        # Look for the sources table
+        for table in self.tables:
+            if len(table) > 1:
+                # Check if this looks like a sources table
+                header = table[0] if table else []
+                if any('Source' in str(cell) for cell in header) or \
+                   any('Mentions' in str(cell) for cell in header):
+                    for row in table[1:]:
+                        if len(row) >= 2:
+                            source = row[1] if row[0] == '' else row[0]
+                            mentions = row[-1]  # Last column is usually mentions
+                            source = source.strip()
+                            if source and source not in ['', 'Source']:
+                                try:
+                                    sources_data[source] = self._parse_number(mentions)
+                                except:
+                                    pass
 
-        for platform in platforms:
-            pattern = rf'{platform}\s+(\d+)\s*(?:\([\d.]+%\))?'
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                sources_data[platform] = int(match.group(1))
+        # Also try regex patterns
+        if not sources_data:
+            platforms = ['x.com', 'youtube.com', 'facebook.com', 'tiktok.com',
+                         'instagram.com', 'twitter.com', 'linkedin.com']
+            for platform in platforms:
+                pattern = rf'{re.escape(platform)}\s+(\d+)'
+                match = re.search(pattern, self.full_text, re.IGNORECASE)
+                if match:
+                    sources_data[platform] = int(match.group(1))
 
         return sources_data
 
-    def _extract_languages_data(self, text: str) -> Dict[str, int]:
-        """Extract languages distribution"""
-        languages_data = {}
+    def _extract_hashtags(self) -> List[Dict[str, Any]]:
+        """Extract hashtags from table"""
+        hashtags = []
 
-        languages = [
-            'French', 'Français', 'English', 'Anglais',
-            'Arabic', 'Arabe', 'Spanish', 'Espagnol'
-        ]
+        # Look for hashtags table
+        for table in self.tables:
+            if len(table) > 1:
+                header = table[0] if table else []
+                if any('Hashtag' in str(cell) for cell in header):
+                    for row in table[1:]:
+                        if len(row) >= 2:
+                            hashtag = row[0]
+                            count = row[1]
+                            if hashtag and hashtag.startswith('#'):
+                                hashtags.append({
+                                    'hashtag': hashtag,
+                                    'count': self._parse_number(count)
+                                })
 
-        for language in languages:
-            pattern = rf'{language}\s+(\d+)\s*(?:\([\d.]+%\))?'
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                # Normalize language name
-                normalized = language
-                if language in ['Français']:
-                    normalized = 'French'
-                elif language in ['Anglais']:
-                    normalized = 'English'
-                elif language in ['Arabe']:
-                    normalized = 'Arabic'
-                elif language in ['Espagnol']:
-                    normalized = 'Spanish'
-                languages_data[normalized] = int(match.group(1))
-
-        return languages_data
-
-    def _extract_topics(self, text: str) -> List[Dict[str, Any]]:
-        """Extract top topics with counts"""
-        topics = []
-
-        # Look for topics section
-        topics_section = re.search(r'[Tt]opics?.*?(?=[Hh]ashtags?|[Rr]each|$)', text, re.DOTALL)
-        if topics_section:
-            topic_pattern = r'(\w[\w\s-]+?)\s+(\d+)(?=\s|$)'
-            matches = re.findall(topic_pattern, topics_section.group())
-
-            for topic, count in matches[:20]:
-                topics.append({
-                    'name': topic.strip(),
+        # Also try regex
+        if not hashtags:
+            pattern = r'(#[\w]+)\s+(\d+)'
+            matches = re.findall(pattern, self.full_text)
+            for hashtag, count in matches:
+                hashtags.append({
+                    'hashtag': hashtag,
                     'count': int(count)
                 })
 
-        return topics
+        return hashtags[:15]
 
-    def _extract_hashtags(self, text: str) -> List[Dict[str, Any]]:
-        """Extract hashtags with counts"""
-        hashtags = []
-
-        hashtag_pattern = r'(#\w+)\s+(\d+)'
-        matches = re.findall(hashtag_pattern, text)
-
-        for hashtag, count in matches:
-            hashtags.append({
-                'hashtag': hashtag,
-                'count': int(count)
-            })
-
-        return hashtags
-
-    def _extract_influencers(self, text: str) -> List[Dict[str, Any]]:
-        """Extract top influencers"""
+    def _extract_influencers(self) -> List[Dict[str, Any]]:
+        """Extract influencers from tables"""
         influencers = []
 
-        # Look for influencer section with scores
-        influencer_pattern = r'([\w\s]+?)\s+(?:https?://[^\s]+\s+)?(\d+)/100'
-        matches = re.findall(influencer_pattern, text)
+        # Look for influencer tables
+        for table in self.tables:
+            if len(table) > 1:
+                header = table[0] if table else []
+                if any('Profile name' in str(cell) or 'Influencer' in str(cell) for cell in header):
+                    for row in table[1:]:
+                        if len(row) >= 3:
+                            # Parse profile name (may contain platform)
+                            profile = row[1] if row[0] == '' else row[0]
+                            profile_parts = profile.split('\n')
+                            name = profile_parts[0].strip()
+                            platform = profile_parts[1].strip() if len(profile_parts) > 1 else ''
 
-        for name, score in matches:
-            influencers.append({
-                'name': name.strip(),
-                'influence_score': int(score)
-            })
+                            # Get other metrics
+                            mentions = 0
+                            reach = 0
+                            followers = 0
+                            score = 0
 
-        return influencers
+                            for i, cell in enumerate(row):
+                                cell_str = str(cell).strip()
+                                if i > 0 and cell_str.isdigit():
+                                    if mentions == 0:
+                                        mentions = int(cell_str)
+                                    elif 'K' in str(row[i]) or 'M' in str(row[i]):
+                                        reach = self._parse_reach_number(cell_str)
+
+                            # Check for follower count
+                            if 'Followers' in str(header):
+                                followers_idx = next((i for i, h in enumerate(header) if 'Followers' in str(h)), -1)
+                                if followers_idx > 0 and followers_idx < len(row):
+                                    followers = self._parse_reach_number(row[followers_idx])
+
+                            # Check for score
+                            if 'Score' in str(header):
+                                score_idx = next((i for i, h in enumerate(header) if 'Score' in str(h)), -1)
+                                if score_idx > 0 and score_idx < len(row):
+                                    try:
+                                        score = int(row[score_idx])
+                                    except:
+                                        score = 0
+
+                            if name and name not in ['', 'Profile name']:
+                                influencers.append({
+                                    'name': name,
+                                    'platform': platform,
+                                    'mentions': mentions,
+                                    'reach': reach,
+                                    'followers': followers,
+                                    'influence_score': score
+                                })
+
+        return influencers[:15]
+
+    def _extract_presence_score(self) -> Dict[str, Any]:
+        """Extract presence score"""
+        data = {'score': 0, 'percentile': 0}
+
+        # Look for presence score
+        pattern = r'(?:Current\s+)?Presence Score\s*\n?\s*(\d+)'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            data['score'] = int(match.group(1))
+
+        # Look for percentile
+        pattern = r'higher than (\d+)% of brands'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            data['percentile'] = int(match.group(1))
+
+        return data
+
+    def _extract_ave(self) -> Dict[str, Any]:
+        """Extract AVE (Advertising Value Equivalent)"""
+        data = {'value': 0, 'currency': 'USD'}
+
+        pattern = r'AVE\s*\n?\s*\$?([\d,]+[MK]?)'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            data['value'] = self._parse_reach_number(match.group(1))
+
+        return data
+
+    # Demographics extraction methods
+    def _extract_demographics_reach(self) -> Dict[str, Any]:
+        """Extract reach from demographics report"""
+        data = {'reach': 0, 'change_percent': 0.0}
+
+        pattern = r'Total Reach\s*\n?\s*([\d,]+[MK]?)'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            data['reach'] = self._parse_reach_number(match.group(1))
+
+        return data
+
+    def _extract_gender_distribution(self) -> Dict[str, float]:
+        """Extract gender distribution"""
+        data = {}
+
+        pattern = r'Female:\s*([\d.]+)%'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            data['female'] = float(match.group(1))
+
+        pattern = r'Male:\s*([\d.]+)%'
+        match = re.search(pattern, self.full_text, re.IGNORECASE)
+        if match:
+            data['male'] = float(match.group(1))
+
+        return data
+
+    def _extract_age_distribution(self) -> List[Dict[str, Any]]:
+        """Extract age distribution"""
+        age_data = []
+
+        age_groups = ['18-24', '25-34', '35-44', '45-54', '55-64', '65+']
+        for age_group in age_groups:
+            # Pattern: age group followed by percentage and count
+            pattern = rf'{re.escape(age_group)}\s*\n?\s*([\d.]+)%\s*\(([\d,\s]+)\)'
+            matches = re.findall(pattern, self.full_text)
+            for percent, count in matches:
+                age_data.append({
+                    'age_group': age_group,
+                    'percentage': float(percent),
+                    'count': self._parse_number(count)
+                })
+
+        return age_data
+
+    def _extract_countries_distribution(self) -> List[Dict[str, Any]]:
+        """Extract countries distribution from table"""
+        countries = []
+
+        for table in self.tables:
+            if len(table) > 1:
+                header = table[0] if table else []
+                if any('Country' in str(cell) for cell in header):
+                    for row in table[1:]:
+                        if len(row) >= 2:
+                            country = row[0]
+                            reach_info = row[1]
+
+                            # Clean country name (remove emoji)
+                            country = re.sub(r'[^\w\s]', '', country).strip()
+
+                            # Parse reach percentage and value
+                            match = re.search(r'([\d.]+)%\s*\(([\d,\sKM]+)\)', reach_info)
+                            if match and country:
+                                countries.append({
+                                    'country': country,
+                                    'percentage': float(match.group(1)),
+                                    'reach': self._parse_reach_number(match.group(2))
+                                })
+
+        return countries[:15]
+
+    def _extract_occupation_distribution(self) -> List[Dict[str, Any]]:
+        """Extract occupation distribution"""
+        occupations = []
+
+        occupation_types = [
+            'Full-time work', 'Part-time work', 'Unemployed', 'Studies',
+            'Homemaker', 'Retired', 'Own business', 'Leave of absence', 'Parental leave'
+        ]
+
+        for occupation in occupation_types:
+            pattern = rf'{re.escape(occupation)}\s*\n?\s*([\d.]+)%\s*\(([\d,\s]+)\)'
+            match = re.search(pattern, self.full_text, re.IGNORECASE)
+            if match:
+                occupations.append({
+                    'occupation': occupation,
+                    'percentage': float(match.group(1)),
+                    'count': self._parse_number(match.group(2))
+                })
+
+        return occupations
+
+    def _extract_education_distribution(self) -> List[Dict[str, Any]]:
+        """Extract education level distribution"""
+        education = []
+
+        education_levels = ['University', 'School', 'Postgraduate', 'None completed']
+
+        for level in education_levels:
+            pattern = rf'{re.escape(level)}\s*\n?\s*([\d.]+)%\s*\(([\d,\s]+)\)'
+            match = re.search(pattern, self.full_text, re.IGNORECASE)
+            if match:
+                education.append({
+                    'level': level,
+                    'percentage': float(match.group(1)),
+                    'count': self._parse_number(match.group(2))
+                })
+
+        return education
+
+    def _extract_interests(self) -> List[Dict[str, Any]]:
+        """Extract interests"""
+        interests = []
+
+        # Pattern: emoji + interest name + percentage
+        pattern = r'[^\w\s]?\s*([A-Za-z\s]+)\s*\n?\s*([\d.]+)%\s*\(([\d,\sKM]+)\)'
+        matches = re.findall(pattern, self.full_text)
+
+        for interest, percent, count in matches:
+            interest = interest.strip()
+            if interest and len(interest) > 2:
+                interests.append({
+                    'interest': interest,
+                    'percentage': float(percent),
+                    'reach': self._parse_reach_number(count)
+                })
+
+        return interests[:10]
 
     def _parse_number(self, text: str) -> int:
         """Parse number from text, handling various formats"""
-        # Remove spaces, commas, and other separators
-        cleaned = re.sub(r'[,\s]', '', text.strip())
+        if not text:
+            return 0
+        cleaned = re.sub(r'[,\s]', '', str(text).strip())
         try:
             return int(float(cleaned))
         except ValueError:
             return 0
 
+    def _parse_reach_number(self, text: str) -> int:
+        """Parse reach number handling K and M suffixes"""
+        if not text:
+            return 0
+        text = str(text).strip().upper()
+        text = re.sub(r'[,\s]', '', text)
+
+        multiplier = 1
+        if text.endswith('K'):
+            multiplier = 1000
+            text = text[:-1]
+        elif text.endswith('M'):
+            multiplier = 1000000
+            text = text[:-1]
+
+        try:
+            return int(float(text) * multiplier)
+        except ValueError:
+            return 0
+
 
 def extract_kpis_from_pptx(pptx_path: str) -> Dict[str, Any]:
-    """Convenience function to extract KPIs from PPTX"""
+    """Convenience function to extract KPIs from Brand24 PPTX"""
     extractor = PPTXKPIExtractor(pptx_path)
     return extractor.extract_all_kpis()

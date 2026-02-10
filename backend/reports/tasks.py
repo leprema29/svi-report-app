@@ -83,6 +83,12 @@ def process_surveillance_report(self, report_id: int):
             except:
                 pass
 
+        # Store report type info
+        report.report_type = extracted_data.get('report_type', 'unknown')
+        report.report_type_display = extracted_data.get('report_type_display', '')
+        report.available_kpis = extracted_data.get('available_kpis', [])
+        report.unavailable_kpis = extracted_data.get('unavailable_kpis', [])
+
         # Store JSON data
         report.sentiment_data = extracted_data.get('sentiment', {})
         report.emotion_data = extracted_data.get('emotion', {})
@@ -91,6 +97,9 @@ def process_surveillance_report(self, report_id: int):
         report.topics_data = extracted_data.get('topics', [])
         report.hashtags_data = extracted_data.get('hashtags', [])
         report.influencers_data = extracted_data.get('influencers', [])
+
+        # Store demographics data (for Brand24 Demographics reports)
+        report.demographics_data = extracted_data.get('demographics', {})
 
         report.save()
 

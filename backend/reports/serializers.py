@@ -18,6 +18,8 @@ class SurveillanceReportSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'status', 'error_message',
             'original_file', 'original_file_url', 'file_type',
+            'report_type', 'report_type_display',
+            'available_kpis', 'unavailable_kpis',
             'original_pdf', 'original_pdf_url',
             'generated_docx', 'generated_docx_url',
             'period_start', 'period_end',
@@ -27,10 +29,13 @@ class SurveillanceReportSerializer(serializers.ModelSerializer):
             'sentiment_data', 'emotion_data',
             'sources_data', 'languages_data',
             'topics_data', 'hashtags_data', 'influencers_data',
+            'demographics_data',
             'created_by_username', 'created_at', 'updated_at'
         ]
         read_only_fields = [
             'id', 'status', 'error_message', 'generated_docx', 'file_type',
+            'report_type', 'report_type_display',
+            'available_kpis', 'unavailable_kpis',
             'period_start', 'period_end',
             'total_mentions', 'mentions_change_percent',
             'total_reach', 'reach_change_percent',
@@ -38,6 +43,7 @@ class SurveillanceReportSerializer(serializers.ModelSerializer):
             'sentiment_data', 'emotion_data',
             'sources_data', 'languages_data',
             'topics_data', 'hashtags_data', 'influencers_data',
+            'demographics_data',
             'created_at', 'updated_at'
         ]
 
@@ -94,9 +100,11 @@ class SurveillanceReportListSerializer(serializers.ModelSerializer):
         model = SurveillanceReport
         fields = [
             'id', 'title', 'status', 'file_type',
+            'report_type', 'report_type_display',
+            'available_kpis', 'unavailable_kpis',
             'period_start', 'period_end',
             'total_mentions', 'total_reach',
             'presence_passive_data', 'presence_active_data',
-            'sentiment_data',
+            'sentiment_data', 'demographics_data',
             'created_by_username', 'created_at'
         ]
