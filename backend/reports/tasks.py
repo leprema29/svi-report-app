@@ -97,6 +97,7 @@ def process_surveillance_report(self, report_id: int):
         report.topics_data = extracted_data.get('topics', [])
         report.hashtags_data = extracted_data.get('hashtags', [])
         report.influencers_data = extracted_data.get('influencers', [])
+        report.reach_breakdown_data = extracted_data.get('reach_breakdown', [])
 
         # Store demographics data (for Brand24 Demographics reports)
         report.demographics_data = extracted_data.get('demographics', {})

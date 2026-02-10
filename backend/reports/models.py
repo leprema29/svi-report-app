@@ -83,6 +83,7 @@ class SurveillanceReport(models.Model):
     topics_data = models.JSONField(default=list)
     hashtags_data = models.JSONField(default=list)
     influencers_data = models.JSONField(default=list)
+    reach_breakdown_data = models.JSONField(default=list, blank=True)
 
     # Demographics data (for Brand24 Demographics reports)
     demographics_data = models.JSONField(default=dict, blank=True)

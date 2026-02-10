@@ -29,7 +29,7 @@ class SurveillanceReportSerializer(serializers.ModelSerializer):
             'sentiment_data', 'emotion_data',
             'sources_data', 'languages_data',
             'topics_data', 'hashtags_data', 'influencers_data',
-            'demographics_data',
+            'reach_breakdown_data', 'demographics_data',
             'created_by_username', 'created_at', 'updated_at'
         ]
         read_only_fields = [
@@ -43,7 +43,7 @@ class SurveillanceReportSerializer(serializers.ModelSerializer):
             'sentiment_data', 'emotion_data',
             'sources_data', 'languages_data',
             'topics_data', 'hashtags_data', 'influencers_data',
-            'demographics_data',
+            'reach_breakdown_data', 'demographics_data',
             'created_at', 'updated_at'
         ]
 

@@ -19,7 +19,7 @@ class PDFKPIExtractor:
 
     # KPIs available in this report type
     AVAILABLE_KPIS = [
-        "mentions", "reach", "sentiment", "emotions",
+        "mentions", "reach", "reach_breakdown", "sentiment", "emotions",
         "sources", "languages", "topics", "hashtags", "influencers"
     ]
 
@@ -53,6 +53,7 @@ class PDFKPIExtractor:
             'period': self._extract_period(),
             'volume': self._extract_volume_data(),
             'reach': self._extract_reach_data(),
+            'reach_breakdown': self._extract_reach_breakdown(),
             'presence_passive': self._build_presence_passive(),
             'presence_active': self._build_presence_active(),  # Not available in Mention
             'sentiment': self._extract_sentiment_data(),
@@ -190,11 +191,20 @@ class PDFKPIExtractor:
 
     def _extract_emotion_data(self) -> Dict[str, int]:
         """
-        Extract emotion distribution - Mention format:
+        Extract emotion distribution from the Emotion section - Mention format:
         Joy
         85 (33.07%)
         """
         emotion_data = {}
+
+        # Find the Emotion section specifically (to avoid matching Sentiment's "Neutral")
+        emotion_section = re.search(
+            r'Emotion\s+\d+/\d+/\d+\s+to\s+\d+/\d+/\d+.*?(?=Languages|Countries|Topics|$)',
+            self.full_text,
+            re.DOTALL | re.IGNORECASE
+        )
+
+        search_text = emotion_section.group() if emotion_section else self.full_text
 
         emotions = {
             'joy': ['Joy', 'Joie'],
@@ -209,7 +219,7 @@ class PDFKPIExtractor:
         for key, names in emotions.items():
             for name in names:
                 pattern = rf'{name}\s*\n?\s*(\d+)\s*\([\d.]+%\)'
-                match = re.search(pattern, self.full_text, re.IGNORECASE)
+                match = re.search(pattern, search_text, re.IGNORECASE)
                 if match:
                     emotion_data[key] = int(match.group(1))
                     break
@@ -284,41 +294,82 @@ class PDFKPIExtractor:
 
     def _extract_topics(self) -> List[Dict[str, Any]]:
         """
-        Extract topics - Mention format shows count before topic name:
-        65
-        rdpc
-        or in word cloud format
+        Extract topics from the bar chart section on page 5.
+        Format: Numbers column first, then topic names column.
+        Handles merged numbers like "2221" (22, 21) and "1010" (10, 10).
         """
         topics = []
 
-        # Find Topics section
+        # Find the Topics bar chart section (on page 5)
         topics_section = re.search(
-            r'Topics.*?(?=Hashtags|Reach|Influence|$)',
+            r'Topics\s+\d+/\d+/\d+\s+to\s+\d+/\d+/\d+\s+\([^)]+\)\s*\n([\s\S]*?)(?=Reach\s+\([^)]+\)|$)',
             self.full_text,
-            re.DOTALL | re.IGNORECASE
+            re.IGNORECASE
         )
 
         if topics_section:
-            section_text = topics_section.group()
+            section_text = topics_section.group(1)
+            lines = section_text.split('\n')
 
-            # Pattern 1: number followed by topic name (from bar chart)
-            pattern1 = r'(\d+)\s*\n\s*([a-zA-Zàâäéèêëïîôùûüç\s-]+?)(?=\d|\n\n|$)'
-            matches = re.findall(pattern1, section_text)
+            # Collect all numbers, handling merged cases
+            numbers = []
+            topic_names = []
+            found_first_topic = False
 
-            for count, topic in matches:
-                topic = topic.strip()
-                if topic and len(topic) > 1 and not topic.isdigit():
-                    topics.append({
-                        'name': topic,
-                        'count': int(count)
-                    })
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Check if line is pure number(s)
+                if line.isdigit():
+                    num = int(line)
+                    # Check for merged numbers (4 digits that are likely 2 two-digit numbers)
+                    if len(line) == 4 and num > 99:
+                        # Could be merged like "2221" -> 22, 21 or "1010" -> 10, 10
+                        first = int(line[:2])
+                        second = int(line[2:])
+                        # Validate: bar chart values decrease, so first >= second usually
+                        if first >= second and first <= 99 and second <= 99:
+                            numbers.append(first)
+                            numbers.append(second)
+                        else:
+                            numbers.append(num)
+                    else:
+                        numbers.append(num)
+
+                # Check if number attached to first topic (e.g., "6rdpc")
+                elif re.match(r'^(\d+)([a-zA-ZÀ-ÿ])', line):
+                    match = re.match(r'^(\d+)([a-zA-ZÀ-ÿ].*)', line)
+                    if match:
+                        numbers.append(int(match.group(1)))
+                        found_first_topic = True
+                        topic = match.group(2).strip('…').strip()
+                        if topic and len(topic) > 1:
+                            topic_names.append(topic)
+
+                # Topic name (starts with letter)
+                elif re.match(r'^[a-zA-ZÀ-ÿ\']', line) and not line.startswith('http'):
+                    found_first_topic = True
+                    topic = line.strip('…').strip()
+                    if topic and len(topic) > 1:
+                        topic_names.append(topic)
+
+            # Match numbers with topic names
+            for i, topic in enumerate(topic_names):
+                count = numbers[i] if i < len(numbers) else 0
+                topics.append({
+                    'name': topic,
+                    'count': count
+                })
 
         # Remove duplicates and sort by count
         seen = set()
         unique_topics = []
         for t in topics:
-            if t['name'].lower() not in seen:
-                seen.add(t['name'].lower())
+            name_lower = t['name'].lower()
+            if name_lower not in seen and len(t['name']) > 1:
+                seen.add(name_lower)
                 unique_topics.append(t)
 
         unique_topics.sort(key=lambda x: x['count'], reverse=True)
@@ -326,17 +377,21 @@ class PDFKPIExtractor:
 
     def _extract_hashtags(self) -> List[Dict[str, Any]]:
         """
-        Extract hashtags - Mention format:
+        Extract hashtags - Mention format has numbers column then hashtags column:
         29
+        27
+        13
+        ...
         #paulbiya
-        or
-        #paulbiya 29
+        #biya2025
+        #cameroon
+        ...
         """
         hashtags = []
 
-        # Find Hashtags section
+        # Find Hashtags section (on page 4)
         hashtags_section = re.search(
-            r'Hashtags.*?(?=Topics|Reach|Influence|Countries|$)',
+            r'Hashtags\s+\d+/\d+/\d+\s+to\s+\d+/\d+/\d+.*?(?=Candidat|Topics\s+\d+/\d+/\d+|Reach|Influence|$)',
             self.full_text,
             re.DOTALL | re.IGNORECASE
         )
@@ -344,25 +399,30 @@ class PDFKPIExtractor:
         if hashtags_section:
             section_text = hashtags_section.group()
 
-            # Pattern 1: count followed by hashtag
-            pattern1 = r'(\d+)\s*\n?\s*(#[\w]+)'
-            matches1 = re.findall(pattern1, section_text)
+            # Extract all numbers (counts) from the section
+            numbers = re.findall(r'^(\d+)$', section_text, re.MULTILINE)
 
-            for count, hashtag in matches1:
+            # Extract all hashtags from the section
+            hashtag_names = re.findall(r'(#[\w]+)', section_text)
+
+            # Match numbers with hashtags (they appear in order)
+            for i, hashtag in enumerate(hashtag_names):
+                count = int(numbers[i]) if i < len(numbers) else 1
+                hashtags.append({
+                    'hashtag': hashtag,
+                    'count': count
+                })
+
+        # Fallback: try direct pattern matching if above didn't work
+        if not hashtags:
+            # Pattern: count followed by hashtag on next line
+            pattern = r'(\d+)\s*\n\s*(#[\w]+)'
+            matches = re.findall(pattern, self.full_text)
+            for count, hashtag in matches:
                 hashtags.append({
                     'hashtag': hashtag,
                     'count': int(count)
                 })
-
-            # Pattern 2: hashtag followed by count
-            if not hashtags:
-                pattern2 = r'(#[\w]+)\s+(\d+)'
-                matches2 = re.findall(pattern2, section_text)
-                for hashtag, count in matches2:
-                    hashtags.append({
-                        'hashtag': hashtag,
-                        'count': int(count)
-                    })
 
         # Remove duplicates and sort
         seen = set()
@@ -377,27 +437,125 @@ class PDFKPIExtractor:
 
     def _extract_influencers(self) -> List[Dict[str, Any]]:
         """
-        Extract influencers - Mention format:
-        Name
-        https://url
+        Extract influencers from 'Influence - Top mentions Facebook' section:
+        Médiatude
+        https://www.facebook.com/profile.php?
         47/100
         """
         influencers = []
 
-        # Pattern: Name followed by URL followed by score/100
-        pattern = r'([A-Za-z0-9\s\'-]+?)\s*\n\s*https://[^\s]+\s*\n?\s*(\d+)/100'
-        matches = re.findall(pattern, self.full_text)
+        # Find the "Influence - Top mentions Facebook" section
+        influence_section = re.search(
+            r'Influence\s*-\s*Top\s+mentions\s+Fac[^\n]*\n([\s\S]*?)(?=Influence\s*-\s*Top|$)',
+            self.full_text,
+            re.IGNORECASE
+        )
 
-        for name, score in matches:
-            name = name.strip()
-            if name and len(name) > 2:
-                influencers.append({
-                    'name': name,
-                    'influence_score': int(score),
-                    'platform': 'facebook.com'  # Default for Mention
-                })
+        if influence_section:
+            section_text = influence_section.group(1)
+
+            # Pattern: Name followed by URL (with profile.php) followed by score/100
+            # The URL may be truncated so we look for facebook.com/profile
+            pattern = r'([A-Za-z0-9À-ÿ\s\'\'-]+?)\s*\n?\s*https://www\.facebook\.com/profile[^\n]*\n?\s*(\d+)/100'
+            matches = re.findall(pattern, section_text, re.IGNORECASE)
+
+            for name, score in matches:
+                name = name.strip()
+                # Filter out noise like page numbers, dates
+                if (name and
+                    len(name) > 2 and
+                    not re.match(r'^\d+$', name) and
+                    not re.match(r'\d+/\d+/\d+', name) and
+                    name.lower() not in ['document', 'page', 'candidat']):
+                    influencers.append({
+                        'name': name,
+                        'influence_score': int(score),
+                        'platform': 'Facebook'
+                    })
+
+        # Fallback: try a simpler pattern if above didn't work
+        if not influencers:
+            pattern = r'([A-Za-z0-9À-ÿ\s\'\'-]{3,}?)\s*\n\s*https://[^\s]+\s*\n?\s*(\d+)/100'
+            matches = re.findall(pattern, self.full_text)
+            for name, score in matches:
+                name = name.strip()
+                if name and len(name) > 2 and not name.isdigit():
+                    influencers.append({
+                        'name': name,
+                        'influence_score': int(score),
+                        'platform': 'Facebook'
+                    })
 
         return influencers[:15]
+
+    def _extract_reach_breakdown(self) -> List[Dict[str, Any]]:
+        """
+        Extract reach breakdown (top posts with their reach) from Mention format:
+        Médiatude
+        https://www.facebook.com/photo/?fbid=12741620214
+        08859&set=a.592433216248413698.3KReach
+        (URL spans multiple lines, reach value like "698.3K" at end followed by 'Reach')
+        """
+        reach_posts = []
+
+        # Find lines ending with reach values (e.g., "698.3KReach", "497.8KReach")
+        # The reach value pattern is: digits, optional decimal, optional K/M/B, then "Reach"
+        # We need to capture ONLY the actual reach value, not URL fragments
+        # Real reach values are like: 698.3K, 560.5K, 497.8K (relatively small numbers with K/M suffix)
+
+        lines = self.full_text.split('\n')
+        current_name = None
+
+        for i, line in enumerate(lines):
+            line = line.strip()
+
+            # If line is a name (starts with letter, not a URL, not too long)
+            if (line and
+                re.match(r'^[A-Za-zÀ-ÿ]', line) and
+                not line.startswith('http') and
+                len(line) < 100 and
+                'facebook.com' not in line.lower() and
+                not re.search(r'\d+/\d+/\d+', line)):  # Not a date
+                current_name = line
+
+            # If line ends with reach value pattern (e.g., "698.3KReach")
+            # Real reach values are like 698.3K, 560.5K, 497.8K (1-3 digits, decimal, 1 digit, K/M)
+            # The decimal point distinguishes reach values from URL numbers
+            reach_match = re.search(r'(\d{1,3}\.\d[KMB])Reach\s*$', line, re.IGNORECASE)
+            if reach_match and current_name:
+                reach_value = reach_match.group(1)
+                reach_num = self._parse_reach_value(reach_value)
+
+                # Avoid duplicates
+                if not any(p['name'] == current_name and p['reach'] == reach_num for p in reach_posts):
+                    reach_posts.append({
+                        'name': current_name,
+                        'reach': reach_num,
+                        'reach_display': reach_value
+                    })
+
+                current_name = None  # Reset for next entry
+
+        return reach_posts[:10]
+
+    def _parse_reach_value(self, value: str) -> int:
+        """Parse reach value like 698.3K, 1.2M to integer"""
+        value = value.strip().upper()
+        multiplier = 1
+        if value.endswith('K'):
+            multiplier = 1000
+            value = value[:-1]
+        elif value.endswith('M'):
+            multiplier = 1000000
+            value = value[:-1]
+        elif value.endswith('B'):
+            multiplier = 1000000000
+            value = value[:-1]
+
+        try:
+            return int(float(value) * multiplier)
+        except ValueError:
+            return 0
 
     def _parse_number(self, text: str) -> int:
         """Parse number from text, handling various formats"""
