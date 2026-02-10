@@ -10,6 +10,7 @@ class SurveillanceReportSerializer(serializers.ModelSerializer):
 
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
     original_file_url = serializers.SerializerMethodField()
+    original_file_name = serializers.SerializerMethodField()
     original_pdf_url = serializers.SerializerMethodField()
     generated_docx_url = serializers.SerializerMethodField()
 
@@ -17,7 +18,7 @@ class SurveillanceReportSerializer(serializers.ModelSerializer):
         model = SurveillanceReport
         fields = [
             'id', 'title', 'status', 'error_message',
-            'original_file', 'original_file_url', 'file_type',
+            'original_file', 'original_file_url', 'original_file_name', 'file_type',
             'report_type', 'report_type_display',
             'available_kpis', 'unavailable_kpis',
             'original_pdf', 'original_pdf_url',
@@ -53,6 +54,16 @@ class SurveillanceReportSerializer(serializers.ModelSerializer):
             request = self.context.get('request')
             if request:
                 return request.build_absolute_uri(obj.original_file.url)
+        return None
+
+    def get_original_file_name(self, obj):
+        """Get original filename"""
+        if obj.original_file:
+            import os
+            return os.path.basename(obj.original_file.name)
+        elif obj.original_pdf:
+            import os
+            return os.path.basename(obj.original_pdf.name)
         return None
 
     def get_original_pdf_url(self, obj):
@@ -95,11 +106,13 @@ class SurveillanceReportListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for list view"""
 
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    original_file_name = serializers.SerializerMethodField()
 
     class Meta:
         model = SurveillanceReport
         fields = [
             'id', 'title', 'status', 'file_type',
+            'original_file_name',
             'report_type', 'report_type_display',
             'available_kpis', 'unavailable_kpis',
             'period_start', 'period_end',
@@ -108,3 +121,13 @@ class SurveillanceReportListSerializer(serializers.ModelSerializer):
             'sentiment_data', 'demographics_data',
             'created_by_username', 'created_at'
         ]
+
+    def get_original_file_name(self, obj):
+        """Get original filename"""
+        if obj.original_file:
+            import os
+            return os.path.basename(obj.original_file.name)
+        elif obj.original_pdf:
+            import os
+            return os.path.basename(obj.original_pdf.name)
+        return None

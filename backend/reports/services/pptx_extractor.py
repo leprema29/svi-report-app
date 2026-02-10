@@ -246,11 +246,14 @@ class PPTXKPIExtractor:
         if match:
             data['comments'] = self._parse_number(match.group(1))
 
-        # Extract shares - only capture first number, not following lines
-        pattern = r'Social media shares\s*\n?\s*([\d,]+)'
+        # Extract shares - handle numbers with space as thousand separator (e.g., "1 179")
+        # Use [^\n] to stop at newline
+        pattern = r'Social media shares\s*\n\s*([\d][\d\s,]*)'
         match = re.search(pattern, self.full_text, re.IGNORECASE)
         if match:
-            data['shares'] = self._parse_number(match.group(1))
+            # Only take the first line of the captured group
+            shares_str = match.group(1).split('\n')[0]
+            data['shares'] = self._parse_number(shares_str)
 
         # Extract total interactions
         pattern = r'Total social media interactions\s*\n?\s*([\d,]+[MK]?)'

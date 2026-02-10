@@ -105,6 +105,19 @@
             </v-chip>
           </template>
 
+          <!-- Original File Name Column -->
+          <template v-slot:item.original_file_name="{ item }">
+            <v-tooltip bottom v-if="item.original_file_name">
+              <template v-slot:activator="{ props }">
+                <span v-bind="props" class="text-truncate" style="max-width: 150px; display: inline-block;">
+                  {{ item.original_file_name }}
+                </span>
+              </template>
+              <span>{{ item.original_file_name }}</span>
+            </v-tooltip>
+            <span v-else class="text-grey">N/A</span>
+          </template>
+
           <!-- Report Type Column -->
           <template v-slot:item.report_type="{ item }">
             <v-chip
@@ -636,6 +649,7 @@ export default {
       headers: [
         { title: 'ID', key: 'id', sortable: true },
         { title: 'Format', key: 'file_type', sortable: true },
+        { title: 'Fichier Source', key: 'original_file_name', sortable: true },
         { title: 'Type de Rapport', key: 'report_type', sortable: true },
         { title: 'Titre', key: 'title', sortable: true },
         { title: 'Statut', key: 'status', sortable: true },
