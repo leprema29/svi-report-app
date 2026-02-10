@@ -17,6 +17,82 @@ def report_upload_path(instance, filename):
     return f'reports/other/%Y/%m/{filename}'
 
 
+class ReportGroup(models.Model):
+    """Model for grouping multiple source reports into one comprehensive report"""
+
+    GROUP_STATUS = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+
+    title = models.CharField(max_length=255, help_text="Common title/keyword for all reports in this group")
+
+    # Generated comprehensive report
+    generated_docx = models.FileField(upload_to='reports/grouped/%Y/%m/', null=True, blank=True)
+
+    # Period (merged from all source reports)
+    period_start = models.DateField(null=True, blank=True)
+    period_end = models.DateField(null=True, blank=True)
+
+    # Merged KPI data
+    merged_presence_passive = models.JSONField(default=dict, blank=True)
+    merged_presence_active = models.JSONField(default=dict, blank=True)
+    merged_sentiment = models.JSONField(default=dict, blank=True)
+    merged_emotion = models.JSONField(default=dict, blank=True)
+    merged_sources = models.JSONField(default=dict, blank=True)
+    merged_languages = models.JSONField(default=dict, blank=True)
+    merged_topics = models.JSONField(default=list, blank=True)
+    merged_hashtags = models.JSONField(default=list, blank=True)
+    merged_influencers = models.JSONField(default=list, blank=True)
+    merged_reach_breakdown = models.JSONField(default=list, blank=True)
+    merged_demographics = models.JSONField(default=dict, blank=True)
+
+    # Manual entry fields for KPIs not available in source reports
+    manual_followers = models.IntegerField(null=True, blank=True, help_text="Manual entry for followers count")
+    manual_likes = models.IntegerField(null=True, blank=True, help_text="Manual entry for likes count")
+    manual_shares = models.IntegerField(null=True, blank=True, help_text="Manual entry for shares count")
+    manual_comments = models.IntegerField(null=True, blank=True, help_text="Manual entry for comments count")
+    manual_views = models.IntegerField(null=True, blank=True, help_text="Manual entry for views count")
+
+    # Data source references (tracks which data came from which report)
+    data_sources = models.JSONField(default=dict, blank=True)
+    # Structure: {field_name: [{source_report_id, source_filename, source_type, value}, ...]}
+
+    # Source report types included
+    included_report_types = models.JSONField(default=list, blank=True)
+
+    # Status
+    status = models.CharField(max_length=20, choices=GROUP_STATUS, default='pending')
+    error_message = models.TextField(blank=True, null=True)
+
+    # Metadata
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Report Group"
+        verbose_name_plural = "Report Groups"
+
+    def __str__(self):
+        return f"{self.title} - Group ({self.source_reports.count()} reports)"
+
+    def get_source_filenames(self):
+        """Get list of source filenames"""
+        filenames = []
+        for report in self.source_reports.all():
+            if report.original_file:
+                import os
+                filenames.append(os.path.basename(report.original_file.name))
+            elif report.original_pdf:
+                import os
+                filenames.append(os.path.basename(report.original_pdf.name))
+        return filenames
+
+
 class SurveillanceReport(models.Model):
     """Model for storing surveillance report metadata"""
 
@@ -42,6 +118,15 @@ class SurveillanceReport(models.Model):
     title = models.CharField(max_length=255)
     report_type = models.CharField(max_length=50, choices=REPORT_TYPE_CHOICES, default='unknown')
     report_type_display = models.CharField(max_length=100, blank=True)
+
+    # Link to report group (for multi-report processing)
+    report_group = models.ForeignKey(
+        ReportGroup,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='source_reports'
+    )
 
     # Support both PDF and PPTX
     original_file = models.FileField(

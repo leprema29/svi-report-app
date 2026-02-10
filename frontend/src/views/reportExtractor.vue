@@ -1,7 +1,19 @@
 <template>
   <v-container>
-    <!-- Upload Section -->
-    <v-card class="mb-6" elevation="2">
+    <!-- Tab Navigation -->
+    <v-tabs v-model="activeTab" class="mb-4" color="primary">
+      <v-tab value="single">
+        <v-icon left>mdi-file-document</v-icon>
+        Rapport Unique
+      </v-tab>
+      <v-tab value="multi">
+        <v-icon left>mdi-file-document-multiple</v-icon>
+        Rapports Multiples (Consolidé)
+      </v-tab>
+    </v-tabs>
+
+    <!-- Single Upload Section -->
+    <v-card class="mb-6" elevation="2" v-show="activeTab === 'single'">
       <v-card-title class="bg-primary text-white">
         <v-icon left color="white">mdi-upload</v-icon>
         Télécharger un Nouveau Rapport (PDF ou PPTX)
@@ -60,6 +72,247 @@
             Télécharger et Analyser
           </v-btn>
         </v-form>
+      </v-card-text>
+    </v-card>
+
+    <!-- Multi-Report Upload Section -->
+    <v-card class="mb-6" elevation="2" v-show="activeTab === 'multi'">
+      <v-card-title class="bg-deep-purple text-white">
+        <v-icon left color="white">mdi-file-document-multiple</v-icon>
+        Créer un Rapport Consolidé (Plusieurs Sources)
+      </v-card-title>
+
+      <v-card-text class="pt-4">
+        <v-alert type="info" variant="tonal" class="mb-4">
+          <strong>Rapport Consolidé:</strong> Téléchargez plusieurs rapports (Mention.com PDF et/ou Brand24 PPTX)
+          avec le même mot-clé/alerte pour générer un rapport Word unique combinant toutes les données.
+        </v-alert>
+
+        <v-form ref="multiUploadForm" v-model="multiValid">
+          <v-row>
+            <v-col cols="12" md="6">
+              <v-text-field
+                v-model="multiUploadData.title"
+                label="Titre/Mot-clé commun"
+                :rules="[rules.required]"
+                prepend-icon="mdi-text"
+                outlined
+                dense
+                hint="Le titre commun pour tous les rapports de ce groupe"
+              ></v-text-field>
+            </v-col>
+
+            <v-col cols="12" md="6">
+              <v-file-input
+                v-model="multiUploadData.files"
+                label="Fichiers (PDF ou PPTX)"
+                accept=".pdf,.pptx"
+                :rules="[rules.required, rules.minFiles]"
+                prepend-icon="mdi-file-document-multiple"
+                outlined
+                dense
+                show-size
+                multiple
+                chips
+              >
+                <template v-slot:selection="{ fileNames }">
+                  <v-chip
+                    v-for="fileName in fileNames"
+                    :key="fileName"
+                    :color="getFileTypeColor(fileName)"
+                    small
+                    label
+                    class="me-2 mb-1"
+                    closable
+                    @click:close="removeFile(fileName)"
+                  >
+                    <v-icon left small>{{ getFileTypeIcon(fileName) }}</v-icon>
+                    {{ fileName }}
+                  </v-chip>
+                </template>
+              </v-file-input>
+            </v-col>
+          </v-row>
+
+          <!-- Manual Entry Fields -->
+          <v-expansion-panels variant="accordion" class="mb-4">
+            <v-expansion-panel>
+              <v-expansion-panel-title>
+                <v-icon left>mdi-pencil-plus</v-icon>
+                Entrées manuelles (KPIs supplémentaires)
+              </v-expansion-panel-title>
+              <v-expansion-panel-text>
+                <v-alert type="warning" variant="tonal" class="mb-3" density="compact">
+                  Utilisez ces champs pour ajouter des valeurs qui ne sont pas disponibles dans les rapports sources.
+                </v-alert>
+                <v-row>
+                  <v-col cols="12" md="4">
+                    <v-text-field
+                      v-model.number="multiUploadData.manual_followers"
+                      label="Followers"
+                      type="number"
+                      prepend-icon="mdi-account-multiple"
+                      outlined
+                      dense
+                      clearable
+                    ></v-text-field>
+                  </v-col>
+                  <v-col cols="12" md="4">
+                    <v-text-field
+                      v-model.number="multiUploadData.manual_likes"
+                      label="Likes"
+                      type="number"
+                      prepend-icon="mdi-thumb-up"
+                      outlined
+                      dense
+                      clearable
+                    ></v-text-field>
+                  </v-col>
+                  <v-col cols="12" md="4">
+                    <v-text-field
+                      v-model.number="multiUploadData.manual_shares"
+                      label="Partages"
+                      type="number"
+                      prepend-icon="mdi-share-variant"
+                      outlined
+                      dense
+                      clearable
+                    ></v-text-field>
+                  </v-col>
+                  <v-col cols="12" md="4">
+                    <v-text-field
+                      v-model.number="multiUploadData.manual_comments"
+                      label="Commentaires"
+                      type="number"
+                      prepend-icon="mdi-comment-multiple"
+                      outlined
+                      dense
+                      clearable
+                    ></v-text-field>
+                  </v-col>
+                  <v-col cols="12" md="4">
+                    <v-text-field
+                      v-model.number="multiUploadData.manual_views"
+                      label="Vues"
+                      type="number"
+                      prepend-icon="mdi-eye"
+                      outlined
+                      dense
+                      clearable
+                    ></v-text-field>
+                  </v-col>
+                </v-row>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+          </v-expansion-panels>
+
+          <v-btn
+            color="deep-purple"
+            @click="uploadMultiReport"
+            :loading="uploadingMulti"
+            :disabled="!multiValid || uploadingMulti"
+            large
+          >
+            <v-icon left>mdi-cloud-upload</v-icon>
+            Créer Rapport Consolidé
+          </v-btn>
+        </v-form>
+      </v-card-text>
+    </v-card>
+
+    <!-- Report Groups List (Multi-reports) -->
+    <v-card elevation="2" class="mb-6" v-show="activeTab === 'multi' && reportGroups.length > 0">
+      <v-card-title class="bg-deep-purple-lighten-1 text-white">
+        <v-icon left color="white">mdi-folder-multiple</v-icon>
+        Rapports Consolidés
+      </v-card-title>
+
+      <v-card-text>
+        <v-data-table
+          :headers="groupHeaders"
+          :items="reportGroups"
+          :items-per-page="5"
+          class="elevation-1"
+        >
+          <!-- Status Column -->
+          <template v-slot:item.status="{ item }">
+            <v-chip
+              :color="getStatusColor(item.status)"
+              dark
+              small
+            >
+              <v-icon left small>{{ getStatusIcon(item.status) }}</v-icon>
+              {{ getStatusText(item.status) }}
+            </v-chip>
+          </template>
+
+          <!-- Source Count -->
+          <template v-slot:item.source_count="{ item }">
+            <v-chip small color="info" variant="outlined">
+              {{ item.source_count || item.source_filenames?.length || 0 }} fichiers
+            </v-chip>
+          </template>
+
+          <!-- Source Files -->
+          <template v-slot:item.source_filenames="{ item }">
+            <div class="d-flex flex-wrap ga-1">
+              <v-chip
+                v-for="filename in (item.source_filenames || []).slice(0, 2)"
+                :key="filename"
+                :color="getFileTypeColor(filename)"
+                x-small
+                label
+              >
+                {{ filename.substring(0, 15) }}{{ filename.length > 15 ? '...' : '' }}
+              </v-chip>
+              <v-chip v-if="(item.source_filenames || []).length > 2" x-small color="grey">
+                +{{ item.source_filenames.length - 2 }}
+              </v-chip>
+            </div>
+          </template>
+
+          <!-- Period Column -->
+          <template v-slot:item.period="{ item }">
+            <span v-if="item.period_start && item.period_end">
+              {{ formatDate(item.period_start) }} - {{ formatDate(item.period_end) }}
+            </span>
+            <span v-else class="text-grey">N/A</span>
+          </template>
+
+          <!-- Actions Column -->
+          <template v-slot:item.actions="{ item }">
+            <div class="d-flex align-center ga-1">
+              <v-tooltip location="top">
+                <template v-slot:activator="{ props }">
+                  <v-btn
+                    v-bind="props"
+                    icon="mdi-microsoft-word"
+                    size="small"
+                    variant="tonal"
+                    color="deep-purple"
+                    :disabled="item.status !== 'completed'"
+                    @click="downloadGroupDocx(item)"
+                  ></v-btn>
+                </template>
+                <span>Télécharger Word Consolidé</span>
+              </v-tooltip>
+
+              <v-tooltip location="top">
+                <template v-slot:activator="{ props }">
+                  <v-btn
+                    v-bind="props"
+                    icon="mdi-trash-can-outline"
+                    size="small"
+                    variant="tonal"
+                    color="error"
+                    @click="deleteReportGroup(item)"
+                  ></v-btn>
+                </template>
+                <span>Supprimer</span>
+              </v-tooltip>
+            </div>
+          </template>
+        </v-data-table>
       </v-card-text>
     </v-card>
 
@@ -629,11 +882,15 @@ export default {
 
   data() {
     return {
+      activeTab: 'single',
       valid: false,
+      multiValid: false,
       loading: false,
       uploading: false,
+      uploadingMulti: false,
       search: '',
       reports: [],
+      reportGroups: [],
       detailsDialog: false,
       selectedReport: null,
 
@@ -642,8 +899,19 @@ export default {
         file: null,
       },
 
+      multiUploadData: {
+        title: '',
+        files: [],
+        manual_followers: null,
+        manual_likes: null,
+        manual_shares: null,
+        manual_comments: null,
+        manual_views: null,
+      },
+
       rules: {
         required: value => !!value || 'Champ requis',
+        minFiles: value => (value && value.length >= 1) || 'Au moins 1 fichier requis',
       },
 
       headers: [
@@ -660,6 +928,17 @@ export default {
         { title: 'Actions', key: 'actions', sortable: false },
       ],
 
+      groupHeaders: [
+        { title: 'ID', key: 'id', sortable: true },
+        { title: 'Titre', key: 'title', sortable: true },
+        { title: 'Statut', key: 'status', sortable: true },
+        { title: 'Sources', key: 'source_count', sortable: false },
+        { title: 'Fichiers', key: 'source_filenames', sortable: false },
+        { title: 'Période', key: 'period', sortable: false },
+        { title: 'Créé le', key: 'created_at', sortable: true },
+        { title: 'Actions', key: 'actions', sortable: false },
+      ],
+
       snackbar: {
         show: false,
         message: '',
@@ -672,9 +951,11 @@ export default {
 
   mounted() {
     this.loadReports()
+    this.loadReportGroups()
     // Auto-refresh every 10 seconds
     this.refreshInterval = setInterval(() => {
       this.loadReports(true)
+      this.loadReportGroups(true)
     }, 10000)
   },
 
@@ -701,6 +982,18 @@ export default {
       } finally {
         if (!silent) {
           this.loading = false
+        }
+      }
+    },
+
+    async loadReportGroups(silent = false) {
+      try {
+        const response = await axios.get('/api/report-groups/')
+        this.reportGroups = response.data.results || response.data
+      } catch (error) {
+        console.error('Error loading report groups:', error)
+        if (!silent) {
+          this.showSnackbar('Erreur lors du chargement des groupes de rapports', 'error')
         }
       }
     },
@@ -790,6 +1083,112 @@ export default {
         console.error('Error deleting report:', error)
         this.showSnackbar('Erreur lors de la suppression du rapport', 'error')
       }
+    },
+
+    async uploadMultiReport() {
+      if (!this.$refs.multiUploadForm.validate()) {
+        return
+      }
+
+      this.uploadingMulti = true
+
+      try {
+        const formData = new FormData()
+        formData.append('title', this.multiUploadData.title)
+
+        // Add all files
+        for (const file of this.multiUploadData.files) {
+          formData.append('files', file)
+        }
+
+        // Add manual entry fields if provided
+        if (this.multiUploadData.manual_followers) {
+          formData.append('manual_followers', this.multiUploadData.manual_followers)
+        }
+        if (this.multiUploadData.manual_likes) {
+          formData.append('manual_likes', this.multiUploadData.manual_likes)
+        }
+        if (this.multiUploadData.manual_shares) {
+          formData.append('manual_shares', this.multiUploadData.manual_shares)
+        }
+        if (this.multiUploadData.manual_comments) {
+          formData.append('manual_comments', this.multiUploadData.manual_comments)
+        }
+        if (this.multiUploadData.manual_views) {
+          formData.append('manual_views', this.multiUploadData.manual_views)
+        }
+
+        await axios.post('/api/report-groups/', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        })
+
+        this.showSnackbar(`Groupe de rapports créé avec ${this.multiUploadData.files.length} fichiers! Traitement en cours...`, 'success')
+
+        // Reset form
+        this.multiUploadData = {
+          title: '',
+          files: [],
+          manual_followers: null,
+          manual_likes: null,
+          manual_shares: null,
+          manual_comments: null,
+          manual_views: null,
+        }
+        this.$refs.multiUploadForm.reset()
+        this.loadReportGroups()
+      } catch (error) {
+        console.error('Error uploading multi-report:', error)
+        this.showSnackbar('Erreur lors de la création du groupe de rapports', 'error')
+      } finally {
+        this.uploadingMulti = false
+      }
+    },
+
+    async downloadGroupDocx(group) {
+      if (group.status !== 'completed') {
+        this.showSnackbar('Le rapport consolidé n\'est pas encore terminé', 'warning')
+        return
+      }
+
+      try {
+        const response = await axios.get(`/api/report-groups/${group.id}/download-docx/`, {
+          responseType: 'blob',
+        })
+
+        const url = window.URL.createObjectURL(new Blob([response.data]))
+        const link = document.createElement('a')
+        link.href = url
+        link.setAttribute('download', `rapport_consolide_${group.id}.docx`)
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+
+        this.showSnackbar('Document Word consolidé téléchargé', 'success')
+      } catch (error) {
+        console.error('Error downloading group DOCX:', error)
+        this.showSnackbar('Erreur lors du téléchargement du document Word', 'error')
+      }
+    },
+
+    async deleteReportGroup(group) {
+      if (!confirm(`Êtes-vous sûr de vouloir supprimer le groupe de rapports "${group.title}" et tous ses fichiers sources?`)) {
+        return
+      }
+
+      try {
+        await axios.delete(`/api/report-groups/${group.id}/`)
+        this.showSnackbar('Groupe de rapports supprimé', 'success')
+        this.loadReportGroups()
+      } catch (error) {
+        console.error('Error deleting report group:', error)
+        this.showSnackbar('Erreur lors de la suppression du groupe de rapports', 'error')
+      }
+    },
+
+    removeFile(fileName) {
+      this.multiUploadData.files = this.multiUploadData.files.filter(f => f.name !== fileName)
     },
 
     // Helper methods for new KPI structure

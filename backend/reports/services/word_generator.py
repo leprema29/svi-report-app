@@ -9,7 +9,7 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.section import WD_ORIENT
 from docx.oxml.ns import qn, nsmap
 from docx.oxml import OxmlElement
-from typing import Dict, Any
+from typing import Dict, Any, List
 from datetime import datetime
 import os
 import tempfile
@@ -106,6 +106,7 @@ class WordReportGenerator:
         # Store generation time and report type
         self.generation_time = datetime.now()
         self.report_type = data.get('report_type', 'unknown')
+        self.is_merged_report = 'source_files' in data and len(data.get('source_files', [])) > 1
 
         # Add cover page first (from template or fallback)
         self._add_cover_page(data)
@@ -116,15 +117,22 @@ class WordReportGenerator:
         # Add title
         self._add_title("RAPPORT DE VEILLE INFORMATIONNELLE")
 
-        # Add source file info
-        source_filename = data.get('source_filename', '')
-        if source_filename:
-            self._add_subtitle(f"Source: {source_filename}")
+        # For merged reports, show source files info
+        if self.is_merged_report:
+            source_files = data.get('source_files', [])
+            self._add_subtitle(f"Rapport consolidé à partir de {len(source_files)} sources")
+            for sf in source_files:
+                self._add_source_file_info(sf)
+        else:
+            # Single source file info
+            source_filename = data.get('source_filename', '')
+            if source_filename:
+                self._add_subtitle(f"Source: {source_filename}")
 
-        # Add report type
-        report_type_display = data.get('report_type_display', '')
-        if report_type_display:
-            self._add_subtitle(f"Type de rapport: {report_type_display}")
+            # Add report type
+            report_type_display = data.get('report_type_display', '')
+            if report_type_display:
+                self._add_subtitle(f"Type de rapport: {report_type_display}")
 
         # Add period
         period = data.get('period', {})
@@ -137,7 +145,10 @@ class WordReportGenerator:
         self.doc.add_paragraph()  # Spacing
 
         # Generate sections based on report type
-        if self.report_type == 'brand24_demographics':
+        if self.is_merged_report:
+            # Generate comprehensive merged report
+            self._generate_merged_report(data)
+        elif self.report_type == 'brand24_demographics':
             self._generate_demographics_report(data)
         elif self.report_type == 'brand24_analysis':
             self._generate_brand24_analysis_report(data)
@@ -148,6 +159,181 @@ class WordReportGenerator:
         # Save document
         self.doc.save(output_path)
         return output_path
+
+    def _add_source_file_info(self, source_info: Dict):
+        """Add individual source file info line"""
+        para = self.doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = para.add_run(f"• {source_info.get('filename', '')} ({source_info.get('report_type_display', source_info.get('report_type', ''))})")
+        run.font.size = Pt(10)
+        run.font.italic = True
+
+    def _generate_merged_report(self, data: Dict[str, Any]):
+        """Generate comprehensive report from merged data from multiple sources"""
+        section_num = 1
+
+        # 1. KPI Classification Section
+        self._add_section_heading(f"{section_num}. CLASSIFICATION DES INDICATEURS CLÉS DE PERFORMANCE")
+
+        # 1.1 Indicateurs de présence passive
+        if self._has_data(data.get('presence_passive', {})):
+            self._add_subsection_heading(f"{section_num}.1. Indicateurs de présence passive")
+            self._add_presence_passive_table(data)
+
+        # 1.2 Indicateurs de présence active
+        if self._has_data(data.get('presence_active', {})):
+            self._add_subsection_heading(f"{section_num}.2. Indicateurs de présence active")
+            self._add_presence_active_table(data)
+
+        # 1.3 Indicateurs des tendances d'opinions (Sentiment)
+        if self._has_data(data.get('sentiment', {})):
+            self._add_subsection_heading(f"{section_num}.3. Indicateurs des tendances d'opinions (Sentiment)")
+            self._add_opinion_trends_table(data.get('sentiment', {}))
+
+        # 1.4 Indicateurs des émotions
+        if self._has_data(data.get('emotion', {})):
+            self._add_subsection_heading(f"{section_num}.4. Indicateurs des émotions")
+            self._add_emotions_table(data.get('emotion', {}))
+
+        section_num += 1
+
+        # Sources distribution
+        if self._has_data(data.get('sources', {})):
+            self._add_section_heading(f"{section_num}. RÉPARTITION PAR SOURCE")
+            self._add_sources_table(data.get('sources', {}))
+            section_num += 1
+
+        # Languages
+        if self._has_data(data.get('languages', {})):
+            self._add_section_heading(f"{section_num}. RÉPARTITION PAR LANGUE")
+            self._add_languages_table(data.get('languages', {}))
+            section_num += 1
+
+        # Topics
+        if self._has_data(data.get('topics', [])):
+            self._add_section_heading(f"{section_num}. SUJETS PRINCIPAUX")
+            self._add_topics_table(data.get('topics', []))
+            section_num += 1
+
+        # Hashtags
+        if self._has_data(data.get('hashtags', [])):
+            self._add_section_heading(f"{section_num}. HASHTAGS POPULAIRES")
+            self._add_hashtags_table(data.get('hashtags', []))
+            section_num += 1
+
+        # Influencers
+        if self._has_data(data.get('influencers', [])):
+            self._add_section_heading(f"{section_num}. INFLUENCEURS PRINCIPAUX")
+            self._add_influencers_table(data.get('influencers', []))
+            section_num += 1
+
+        # Reach breakdown
+        if self._has_data(data.get('reach_breakdown', [])):
+            self._add_section_heading(f"{section_num}. PORTÉE DES PUBLICATIONS")
+            self._add_reach_breakdown_table(data.get('reach_breakdown', []))
+            section_num += 1
+
+        # Demographics (if available from Brand24 Demographics report)
+        demographics = data.get('demographics', {})
+        if self._has_data(demographics):
+            self._add_section_heading(f"{section_num}. DONNÉES DÉMOGRAPHIQUES")
+
+            if self._has_data(demographics.get('gender', {})):
+                self._add_subsection_heading(f"{section_num}.1. Répartition par genre")
+                self._add_gender_table(demographics.get('gender', {}))
+
+            if self._has_data(demographics.get('age', [])):
+                self._add_subsection_heading(f"{section_num}.2. Répartition par âge")
+                self._add_age_table(demographics.get('age', []))
+
+            if self._has_data(demographics.get('countries', [])):
+                self._add_subsection_heading(f"{section_num}.3. Répartition par pays")
+                self._add_countries_table(demographics.get('countries', []))
+
+            section_num += 1
+
+        # Data Sources Reference section (for merged reports)
+        data_sources = data.get('data_sources', {})
+        if data_sources:
+            self._add_section_heading(f"{section_num}. RÉFÉRENCES DES SOURCES DE DONNÉES")
+            self._add_data_sources_reference(data_sources, data.get('source_files', []))
+
+    def _add_data_sources_reference(self, data_sources: Dict, source_files: List[Dict]):
+        """Add reference section showing which data came from which source"""
+        # Add explanation
+        para = self.doc.add_paragraph()
+        run = para.add_run("Cette section indique la provenance des données utilisées dans ce rapport consolidé.")
+        run.font.size = Pt(11)
+        run.font.italic = True
+
+        self.doc.add_paragraph()
+
+        # Group data sources by source file
+        sources_by_file = {}
+        for field, sources in data_sources.items():
+            for source in sources:
+                filename = source.get('filename', 'Unknown')
+                if filename not in sources_by_file:
+                    sources_by_file[filename] = []
+                # Extract the field category (first part before dot)
+                field_category = field.split('.')[0] if '.' in field else field
+                if field_category not in [f['category'] for f in sources_by_file[filename]]:
+                    sources_by_file[filename].append({
+                        'category': field_category,
+                        'report_type': source.get('report_type', '')
+                    })
+
+        # Category labels in French
+        category_labels = {
+            'period_start': 'Période de début',
+            'period_end': 'Période de fin',
+            'presence_passive': 'Présence passive (followers, vues, portée)',
+            'presence_active': 'Présence active (likes, commentaires, partages)',
+            'volume': 'Volume de mentions',
+            'reach': 'Portée',
+            'sentiment': 'Sentiment',
+            'emotion': 'Émotions',
+            'sources': 'Sources/Plateformes',
+            'languages': 'Langues',
+            'topics': 'Sujets',
+            'hashtags': 'Hashtags',
+            'influencers': 'Influenceurs',
+            'reach_breakdown': 'Portée des publications',
+            'demographics': 'Données démographiques'
+        }
+
+        # Create table with source files and their data contributions
+        table = self.doc.add_table(rows=len(sources_by_file) + 1, cols=3)
+        table.style = 'Light Grid Accent 1'
+
+        # Header
+        header_cells = table.rows[0].cells
+        header_cells[0].text = 'Fichier Source'
+        header_cells[1].text = 'Type de Rapport'
+        header_cells[2].text = 'Données Fournies'
+        self._set_cell_background(header_cells[0], 'D5E8F0')
+        self._set_cell_background(header_cells[1], 'D5E8F0')
+        self._set_cell_background(header_cells[2], 'D5E8F0')
+
+        # Data rows
+        for idx, (filename, categories) in enumerate(sources_by_file.items(), 1):
+            cells = table.rows[idx].cells
+            cells[0].text = filename
+
+            # Get report type
+            report_type = categories[0].get('report_type', '') if categories else ''
+            report_type_display = {
+                'mention_dashboard': 'Mention.com Dashboard',
+                'brand24_analysis': 'Brand24 Analysis',
+                'brand24_demographics': 'Brand24 Demographics'
+            }.get(report_type, report_type)
+            cells[1].text = report_type_display
+
+            # List categories
+            category_names = [category_labels.get(c['category'], c['category']) for c in categories]
+            cells[2].text = ', '.join(category_names[:5])  # Limit to 5 for readability
+            if len(category_names) > 5:
+                cells[2].text += f" (+{len(category_names) - 5} autres)"
 
     def _generate_mention_report(self, data: Dict[str, Any]):
         """Generate sections for Mention.com report"""

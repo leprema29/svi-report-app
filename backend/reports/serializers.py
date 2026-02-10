@@ -2,7 +2,8 @@
 DRF Serializers for Surveillance Reports
 """
 from rest_framework import serializers
-from .models import SurveillanceReport
+from .models import SurveillanceReport, ReportGroup
+import os
 
 
 class SurveillanceReportSerializer(serializers.ModelSerializer):
@@ -59,10 +60,8 @@ class SurveillanceReportSerializer(serializers.ModelSerializer):
     def get_original_file_name(self, obj):
         """Get original filename"""
         if obj.original_file:
-            import os
             return os.path.basename(obj.original_file.name)
         elif obj.original_pdf:
-            import os
             return os.path.basename(obj.original_pdf.name)
         return None
 
@@ -125,9 +124,111 @@ class SurveillanceReportListSerializer(serializers.ModelSerializer):
     def get_original_file_name(self, obj):
         """Get original filename"""
         if obj.original_file:
-            import os
             return os.path.basename(obj.original_file.name)
         elif obj.original_pdf:
-            import os
             return os.path.basename(obj.original_pdf.name)
         return None
+
+
+class ReportGroupSerializer(serializers.ModelSerializer):
+    """Serializer for report group model"""
+
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    generated_docx_url = serializers.SerializerMethodField()
+    source_reports = SurveillanceReportListSerializer(many=True, read_only=True)
+    source_filenames = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ReportGroup
+        fields = [
+            'id', 'title', 'status', 'error_message',
+            'generated_docx', 'generated_docx_url',
+            'period_start', 'period_end',
+            'merged_presence_passive', 'merged_presence_active',
+            'merged_sentiment', 'merged_emotion',
+            'merged_sources', 'merged_languages',
+            'merged_topics', 'merged_hashtags',
+            'merged_influencers', 'merged_reach_breakdown',
+            'merged_demographics',
+            'manual_followers', 'manual_likes', 'manual_shares',
+            'manual_comments', 'manual_views',
+            'data_sources', 'included_report_types',
+            'source_reports', 'source_filenames',
+            'created_by_username', 'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'status', 'error_message', 'generated_docx',
+            'merged_presence_passive', 'merged_presence_active',
+            'merged_sentiment', 'merged_emotion',
+            'merged_sources', 'merged_languages',
+            'merged_topics', 'merged_hashtags',
+            'merged_influencers', 'merged_reach_breakdown',
+            'merged_demographics', 'data_sources',
+            'included_report_types', 'source_reports',
+            'period_start', 'period_end',
+            'created_at', 'updated_at'
+        ]
+
+    def get_generated_docx_url(self, obj):
+        """Get full URL for generated Word document"""
+        if obj.generated_docx:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.generated_docx.url)
+        return None
+
+    def get_source_filenames(self, obj):
+        """Get list of source filenames"""
+        return obj.get_source_filenames()
+
+
+class ReportGroupCreateSerializer(serializers.Serializer):
+    """Serializer for creating report groups with multiple file uploads"""
+
+    title = serializers.CharField(max_length=255, help_text="Common title/keyword for all reports")
+    files = serializers.ListField(
+        child=serializers.FileField(),
+        min_length=1,
+        max_length=10,
+        help_text="List of PDF or PPTX files to process"
+    )
+    manual_followers = serializers.IntegerField(required=False, allow_null=True)
+    manual_likes = serializers.IntegerField(required=False, allow_null=True)
+    manual_shares = serializers.IntegerField(required=False, allow_null=True)
+    manual_comments = serializers.IntegerField(required=False, allow_null=True)
+    manual_views = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate_files(self, files):
+        """Validate that all files are PDF or PPTX"""
+        allowed_extensions = ['.pdf', '.pptx']
+        for f in files:
+            ext = os.path.splitext(f.name)[1].lower()
+            if ext not in allowed_extensions:
+                raise serializers.ValidationError(
+                    f"File '{f.name}' has unsupported format. Only PDF and PPTX files are allowed."
+                )
+        return files
+
+
+class ReportGroupListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for report group list view"""
+
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    source_count = serializers.SerializerMethodField()
+    source_filenames = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ReportGroup
+        fields = [
+            'id', 'title', 'status',
+            'period_start', 'period_end',
+            'included_report_types',
+            'source_count', 'source_filenames',
+            'created_by_username', 'created_at'
+        ]
+
+    def get_source_count(self, obj):
+        return obj.source_reports.count()
+
+    def get_source_filenames(self, obj):
+        return obj.get_source_filenames()
