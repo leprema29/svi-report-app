@@ -246,8 +246,8 @@ class PPTXKPIExtractor:
         if match:
             data['comments'] = self._parse_number(match.group(1))
 
-        # Extract shares
-        pattern = r'Social media shares\s*\n?\s*([\d,\s]+)'
+        # Extract shares - only capture first number, not following lines
+        pattern = r'Social media shares\s*\n?\s*([\d,]+)'
         match = re.search(pattern, self.full_text, re.IGNORECASE)
         if match:
             data['shares'] = self._parse_number(match.group(1))
@@ -420,7 +420,16 @@ class PPTXKPIExtractor:
                                     'influence_score': score
                                 })
 
-        return influencers[:15]
+        # Remove duplicates by name (keep first occurrence)
+        seen_names = set()
+        unique_influencers = []
+        for inf in influencers:
+            name_lower = inf['name'].lower()
+            if name_lower not in seen_names:
+                seen_names.add(name_lower)
+                unique_influencers.append(inf)
+
+        return unique_influencers[:15]
 
     def _extract_presence_score(self) -> Dict[str, Any]:
         """Extract presence score"""

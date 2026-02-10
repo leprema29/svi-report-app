@@ -752,7 +752,8 @@ class WordReportGenerator:
             cells[1].text = influencer.get('name', '')
             cells[2].text = influencer.get('platform', 'Facebook')
             score = influencer.get('influence_score', 0)
-            cells[3].text = f"{score}/100"
+            # Show "-" if no score available
+            cells[3].text = f"{score}/100" if score > 0 else "-"
 
     def _add_reach_breakdown_table(self, reach_posts: list):
         """Add reach breakdown (top posts) table"""
